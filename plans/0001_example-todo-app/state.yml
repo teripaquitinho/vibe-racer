@@ -1,0 +1,7 @@
+stage: need_objective
+title: example todo app
+created: "2026-03-31T00:00:00.000Z"
+updated: "2026-03-31T00:00:00.000Z"
+trivial: false
+prev: null
+next: ai_objective_review

@@ -1,0 +1,75 @@
+{
+  "name": "vibe-racer",
+  "version": "0.1.0",
+  "description": "Your AI race engineer — five laps from objective to shipped code, you call the pit stops",
+  "type": "module",
+  "bin": {
+    "vibe-racer": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "claude",
+    "claude-code",
+    "development-pipeline",
+    "ai-workflow",
+    "vibe-coding",
+    "code-generation",
+    "software-engineering",
+    "automation",
+    "racing",
+    "pipeline",
+    "race-engineer"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/teripaquitinho/vibe-racer"
+  },
+  "homepage": "https://github.com/teripaquitinho/vibe-racer",
+  "bugs": {
+    "url": "https://github.com/teripaquitinho/vibe-racer/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.2",
+    "eslint": "^10.0.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "vitepress": "^1.6.0",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.62",
+    "@inquirer/prompts": "^8.3.0",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "simple-git": "^3.32.3",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
+  }
+}
