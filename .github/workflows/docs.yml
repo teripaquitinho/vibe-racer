@@ -1,15 +1,18 @@
 name: Deploy Docs
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths: ["docs/**"]
   workflow_dispatch:
 permissions:
   pages: write
   id-token: write
+  contents: read
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

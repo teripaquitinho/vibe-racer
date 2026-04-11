@@ -27,3 +27,8 @@
   --vp-home-hero-image-background-image: none;
   --vp-home-hero-image-filter: none;
 }
+
+.VPImage.image-src {
+  max-width: 480px;
+  max-height: 480px;
+}
