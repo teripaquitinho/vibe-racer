@@ -12,11 +12,8 @@
   "files": [
     "dist",
     "README.md",
-    "SECURITY.md",
     "LICENSE",
-    "CHANGELOG.md",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md"
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsup",

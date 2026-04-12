@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/public/logo.png" alt="vibe-racer" width="400" />
+  <img src="https://raw.githubusercontent.com/teripaquitinho/vibe-racer/main/docs/public/logo.png" alt="vibe-racer" width="400" />
 </p>
 
 <p align="center">
@@ -16,6 +16,8 @@
 
 <p align="center">
   <a href="https://teripaquitinho.github.io/vibe-racer/"><strong>📚 Documentation</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/teripaquitinho/vibe-racer"><strong>🧑‍💻 GitHub</strong></a>
 </p>
 
 ---
