@@ -1,3 +1,5 @@
+> **vibe-racer is built with vibe-racer.** Every feature in this repo is planned, designed, and executed through the same pipeline you're reading about.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/teripaquitinho/vibe-racer/main/docs/public/logo.png" alt="vibe-racer" width="400" />
 </p>
