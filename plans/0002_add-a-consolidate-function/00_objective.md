@@ -1,9 +1,9 @@
 # Objective
 
-We need to add a consolidate cli function to run analysis and clean code 
+Add a `vibe-racer fasten` CLI command that runs a dead code analysis via Claude and writes the findings into a new plan's `00_objective.md`, ready for the pipeline to execute.
 
-* 
-* suggested prompt to use
+## Analysis prompt
+
 ```
 Please perform a dead code analysis on this project. I want to identify code that can be safely removed. Here's what to look for:
 
@@ -26,13 +26,11 @@ For each finding, please:
 - Suggest whether to **delete, consolidate, or investigate further**
 
 At the end, produce a **prioritized summary** grouped by: safe to delete / needs review / keep but flag.
-
-Do not make any changes yet — write analysis in a new plan folder (same as vibe-racer new "consolidate-code-[date]"). The plan would be in the bjective
 ```
 
-## then
-The analysis should be put in a new plan folder (same as vibe-racer new "consolidate-code-[date]"). The plan would be in the bjective
-Then the analysis should be accepted (tick at the bottom) and at the next run can be picked up.
+## Expected outcome
+
+`fasten` writes the structured analysis into `00_objective.md` of a new plan folder (`NNNN_fasten-YYYY-MM-DD`), leaving the checkbox unticked. The human reviews the findings, ticks the checkbox, then runs `vibe-racer drive` to advance through the pipeline.
 
 # Complete
 

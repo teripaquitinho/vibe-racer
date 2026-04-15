@@ -1,6 +1,6 @@
-stage: need_product
+stage: need_design
 title: Add a consolidate function
 created: 2026-04-15T09:11:05.650Z
-updated: 2026-04-15T09:16:53.069Z
-prev: ai_objective_review
-next: ai_product_review
+updated: 2026-04-15T09:49:03.973Z
+prev: ai_product_review
+next: ai_design_review
