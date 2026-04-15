@@ -62,6 +62,17 @@ Evaluate diamond (rephraser) and hierarchical coordination patterns for quality 
 
 Replace appended markdown follow-ups with typed follow-up structures. Formalize the "contract negotiation" pattern — precise deliverables, validation mechanisms, and explicit underspecification flagging.
 
+### Skills
+
+Expose vibe-racer functionality as first-class Claude Code skills so users can invoke pipeline actions directly from the Claude Code CLI (e.g., `/vibe-racer start`, `/vibe-racer pitwall`). Skills would wrap existing CLI commands with context-aware prompts, surface lap status inline, and allow the race engineer to trigger checkpoints without leaving the editor.
+
+**Open questions:**
+
+- Which commands map naturally to skills vs. staying pure CLI?
+- Should skills be read-only (status/inspect) or also allow mutations (create task, approve lap)?
+- How do skills compose with hooks — e.g., auto-trigger a skill after a commit?
+- Distribution: ship skills in the vibe-racer package or let users configure them manually?
+
 ---
 
 ## Git Workflow
