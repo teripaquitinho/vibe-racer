@@ -56,6 +56,13 @@ describe("fasten integration", () => {
     const objective = readFileSync(path.join(planDir, "00_objective.md"), "utf-8");
     expect(objective).toContain("Found 3 items");
     expect(objective).toContain("- [ ] Ready to advance to Plan Questions");
+    // Regression: both the template and plan-folder were emitting `# Objective`
+    // and `# Complete`, producing duplicated sections. Guard against it.
+    expect(objective.match(/^#\s+Objective\b/gm)?.length ?? 0).toBe(1);
+    expect(objective.match(/^#\s+Complete\b/gm)?.length ?? 0).toBe(1);
+    expect(
+      objective.match(/- \[ \] Ready to advance to Plan Questions/g)?.length ?? 0,
+    ).toBe(1);
   });
 
   it("state.yml has trivial: true", async () => {

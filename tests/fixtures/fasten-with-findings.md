@@ -4,7 +4,7 @@ Dead code analysis for this project — run by `vibe-racer fasten` on 2026-04-15
 
 ## Summary
 
-Found 5 items: 3 safe to delete, 1 needs review, 1 to keep but flag.
+Found 5 items: 3 safe to delete, 2 need review.
 
 ## Safe to Delete
 
@@ -18,19 +18,12 @@ Items with **high confidence** that can be removed without risk.
 
 ## Needs Review
 
-Items with **medium or low confidence** — may have dynamic usage, reflection, or external consumers.
+Items that are not clearly safe to delete — medium/low confidence, exported-only-for-tests, public API surface, or potential dynamic usage. Include a short note explaining what to verify or why it might be kept.
 
-| # | File | Line | Type | Why it appears dead | Confidence | Action |
-|---|------|------|------|---------------------|------------|--------|
-| 1 | src/api/handler.ts | 78 | Unused import | Imported but never referenced in this file | Medium | Investigate |
-
-## Keep but Flag
-
-Items that are technically dead but should be preserved for now (e.g., public API surface, upcoming feature flags).
-
-| # | File | Line | Type | Why it's flagged | Reason to keep |
-|---|------|------|------|------------------|----------------|
-| 1 | src/index.ts | 5 | Unused export | Exported but not consumed internally | Public API surface |
+| # | File | Line | Type | Why it appears dead | Confidence | Note |
+|---|------|------|------|---------------------|------------|------|
+| 1 | src/api/handler.ts | 78 | Unused import | Imported but never referenced in this file | Medium | Verify no side-effect import |
+| 2 | src/index.ts | 5 | Unused export | Exported but not consumed internally | Low | Likely public API surface — confirm before removing |
 
 # Complete
 

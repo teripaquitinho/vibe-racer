@@ -55,7 +55,7 @@ describe("runFastenAnalysis", () => {
     expect(prompt).toContain("Deprecated internal APIs");
   });
 
-  it("prompt includes the output template with 3-bucket table format", async () => {
+  it("prompt includes the output template with 2-bucket table format", async () => {
     mockRunAndStream.mockResolvedValue(fixtureWithFindings);
     const { runFastenAnalysis } = await loadModule();
     await runFastenAnalysis("/tmp/project");
@@ -63,16 +63,29 @@ describe("runFastenAnalysis", () => {
     const prompt = mockRunAndStream.mock.calls[0][0].prompt as string;
     expect(prompt).toContain("## Safe to Delete");
     expect(prompt).toContain("## Needs Review");
-    expect(prompt).toContain("## Keep but Flag");
+    // "Keep but Flag" has been merged into "Needs Review".
+    expect(prompt).not.toContain("## Keep but Flag");
   });
 
-  it("prompt includes completion checkbox", async () => {
+  it("prompt explicitly forbids preamble/filler", async () => {
     mockRunAndStream.mockResolvedValue(fixtureWithFindings);
     const { runFastenAnalysis } = await loadModule();
     await runFastenAnalysis("/tmp/project");
 
     const prompt = mockRunAndStream.mock.calls[0][0].prompt as string;
-    expect(prompt).toContain("- [ ] Ready to advance to Plan Questions");
+    expect(prompt).toMatch(/no preamble|any preamble/i);
+    expect(prompt).toContain("Dead code analysis for this project");
+  });
+
+  it("prompt does NOT include completion checkbox or # Objective heading (caller adds them)", async () => {
+    mockRunAndStream.mockResolvedValue(fixtureWithFindings);
+    const { runFastenAnalysis } = await loadModule();
+    await runFastenAnalysis("/tmp/project");
+
+    const prompt = mockRunAndStream.mock.calls[0][0].prompt as string;
+    expect(prompt).not.toContain("- [ ] Ready to advance to Plan Questions");
+    expect(prompt).not.toMatch(/^#\s+Objective/m);
+    expect(prompt).not.toMatch(/^#\s+Complete/m);
   });
 
   it("calls runAndStream with allowedTools: Read, Glob, Grep", async () => {
@@ -112,13 +125,30 @@ describe("runFastenAnalysis", () => {
     );
   });
 
-  it("returns isEmpty: false when output has findings", async () => {
+  it("returns isEmpty: false when output has findings and strips # Objective / # Complete", async () => {
     mockRunAndStream.mockResolvedValue(fixtureWithFindings);
     const { runFastenAnalysis } = await loadModule();
     const result = await runFastenAnalysis("/tmp/project");
 
-    expect(result.output).toBe(fixtureWithFindings);
     expect(result.isEmpty).toBe(false);
+    // Sanitizer strips the redundant heading + completion section.
+    expect(result.output).not.toMatch(/^#\s+Objective/m);
+    expect(result.output).not.toMatch(/#\s+Complete/);
+    expect(result.output).not.toContain("Ready to advance to Plan Questions");
+    // Body is preserved.
+    expect(result.output).toContain("## Summary");
+    expect(result.output).toContain("## Needs Review");
+  });
+
+  it("sanitizer strips model preamble before the anchor line", async () => {
+    const withPreamble = `I now have all the data I need. Here's the analysis:\n\nDead code analysis for this project — run by \`vibe-racer fasten\` on 2026-04-15.\n\n## Summary\n\nFound 1 item: 1 safe to delete.\n`;
+    mockRunAndStream.mockResolvedValue(withPreamble);
+    const { runFastenAnalysis } = await loadModule();
+    const result = await runFastenAnalysis("/tmp/project");
+
+    expect(result.output.startsWith("Dead code analysis for this project")).toBe(true);
+    expect(result.output).not.toContain("I now have all the data I need");
+    expect(result.output).not.toContain("Here's the analysis");
   });
 
   it("returns isEmpty: true when output contains 'no dead code found' (case-insensitive)", async () => {
@@ -126,8 +156,9 @@ describe("runFastenAnalysis", () => {
     const { runFastenAnalysis } = await loadModule();
     const result = await runFastenAnalysis("/tmp/project");
 
-    expect(result.output).toBe(fixtureEmpty);
     expect(result.isEmpty).toBe(true);
+    expect(result.output).not.toMatch(/^#\s+Objective/m);
+    expect(result.output).not.toMatch(/#\s+Complete/);
   });
 
   it("returns isEmpty: true for mixed-case 'No Dead Code Found'", async () => {
@@ -180,7 +211,7 @@ describe("runFastenAnalysis", () => {
     const { runFastenAnalysis } = await loadModule();
     const result = await runFastenAnalysis("/tmp/project");
 
-    expect(result.output).toBe(fixtureWithFindings);
+    expect(result.output).toContain("## Summary");
     const prompt = mockRunAndStream.mock.calls[0][0].prompt as string;
     expect(prompt).not.toContain("## Project README");
     expect(prompt).not.toContain("## Project CLAUDE.md");

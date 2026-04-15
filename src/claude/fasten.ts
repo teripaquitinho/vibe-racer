@@ -11,6 +11,24 @@ function isEmptyAnalysis(output: string): boolean {
   return /no dead code found/i.test(output);
 }
 
+function sanitizeOutput(output: string): string {
+  let text = output.trim();
+  // Strip leading ```...``` fence if the model wrapped the response.
+  text = text.replace(/^```[a-zA-Z]*\n/, "").replace(/\n```\s*$/, "");
+  // Strip any model preamble/filler before the anchor line. The prompt
+  // instructs the model to start with "Dead code analysis for this project"
+  // but models occasionally prefix with filler like "Here's the analysis:".
+  const anchorIdx = text.search(/^Dead code analysis for this project/m);
+  if (anchorIdx > 0) {
+    text = text.slice(anchorIdx);
+  }
+  // Strip a leading `# Objective` heading (caller adds its own).
+  text = text.replace(/^#\s+Objective\s*\n+/i, "");
+  // Strip any trailing `# Complete` section (caller adds its own).
+  text = text.replace(/\n#\s+Complete[\s\S]*$/i, "");
+  return text.trim();
+}
+
 function buildPrompt(cwd: string): string {
   let context = "";
 
@@ -48,16 +66,21 @@ For each finding, include:
 
 ## Output Format
 
-Write your findings using this exact template:
+Your response MUST be ONLY the markdown body below. Do NOT include:
+- any preamble, greeting, or filler (e.g., "Here's the analysis:", "I've analyzed...", "Sure!")
+- any commentary before or after the body
+- any code fences around the response
+- a \`# Objective\` heading or \`# Complete\` section (the caller adds them)
 
-\`\`\`
-# Objective
+The FIRST CHARACTER of your response must be the literal letter \`D\` in \`Dead code analysis for this project\`. End the response with the last table row.
+
+Use this exact two-section template:
 
 Dead code analysis for this project — run by \`vibe-racer fasten\` on ${new Date().toISOString().slice(0, 10)}.
 
 ## Summary
 
-{Total findings count by category. e.g., "Found 12 items: 7 safe to delete, 3 need review, 2 to keep but flag."}
+{Total findings count by category. e.g., "Found 12 items: 7 safe to delete, 5 need review."}
 
 ## Safe to Delete
 
@@ -69,27 +92,15 @@ Items with **high confidence** that can be removed without risk.
 
 ## Needs Review
 
-Items with **medium or low confidence** — may have dynamic usage, reflection, or external consumers.
+Items that are not clearly safe to delete — medium/low confidence, exported-only-for-tests, public API surface, or potential dynamic usage. Include a short note explaining what to verify or why it might be kept.
 
-| # | File | Line | Type | Why it appears dead | Confidence | Action |
-|---|------|------|------|---------------------|------------|--------|
-| 1 | ... | ... | ... | ... | Medium | Investigate |
-
-## Keep but Flag
-
-Items that are technically dead but should be preserved for now (e.g., public API surface, upcoming feature flags).
-
-| # | File | Line | Type | Why it's flagged | Reason to keep |
-|---|------|------|------|------------------|----------------|
-\`\`\`
+| # | File | Line | Type | Why it appears dead | Confidence | Note |
+|---|------|------|------|---------------------|------------|------|
+| 1 | ... | ... | ... | ... | Medium | ... |
 
 If a section has no findings, leave the table with header rows only (no data rows).
 
 If you find **no dead code at all** across any category, write "No dead code found." in the Summary section and leave all tables empty.
-
-# Complete
-
-- [ ] Ready to advance to Plan Questions
 `;
 }
 
@@ -109,5 +120,6 @@ export async function runFastenAnalysis(cwd: string): Promise<FastenAnalysisResu
     throw new Error("Analysis failed. Run vibe-racer fasten again to retry.");
   }
 
-  return { output, isEmpty: isEmptyAnalysis(output) };
+  const cleaned = sanitizeOutput(output);
+  return { output: cleaned, isEmpty: isEmptyAnalysis(cleaned) };
 }
