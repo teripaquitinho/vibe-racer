@@ -37,6 +37,8 @@ The existing pipeline handlers are tied to stage transitions (`ai_objective_revi
 **Answer:**
 Standalone runner in `src/claude/` — something like `src/claude/fasten.ts`. It should reuse the SDK session runner (`src/claude/session.ts`) and the tool guard, but it does not need the pipeline's prompt builder or persona system. The analysis prompt is static (hardcoded from the objective), the persona is irrelevant (this isn't a lap), and the output is a one-shot structured report, not a pipeline document. Import the session runner and guard directly; skip the pipeline dispatch entirely.
 
+> **Tool guard scope**: the guard in `src/claude/guard.ts` likely scopes allowed write paths to the current task's plan folder. The `fasten` analysis session runs *before* the plan folder exists, so the guard must be configured with a read-only profile — no file writes permitted during analysis. The plan folder is created by `fasten` itself (in Node, not via Claude), after the session completes. The implementation must ensure the guard does not block the analysis by expecting a writable task path that doesn't yet exist.
+
 ---
 
 ## Output Parsing
@@ -46,7 +48,9 @@ Standalone runner in `src/claude/` — something like `src/claude/fasten.ts`. It
 Claude will produce a free-form analysis following the prompt's instructions. The product spec requires a specific markdown table format in `00_objective.md`. Should the command (a) include the output format in the prompt and trust Claude to produce it correctly, (b) ask Claude for structured JSON and render the markdown ourselves, or (c) use a two-pass approach — first analysis, then a formatting pass?
 
 **Answer:**
-Option (a) — include the exact output template in the prompt and trust Claude to produce conformant markdown. The locked output format from the product spec (three-bucket tables with specific columns) should be appended to the analysis prompt as an explicit output template. Claude is reliable at following markdown templates, and this avoids parsing complexity. If the output is malformed, the command should write it anyway and let the human fix it during review — this is a human-reviewed artifact, not machine-consumed data.
+Option (a) — include the exact output template in the prompt and trust Claude to produce conformant markdown. The locked output format from the product spec (three-bucket tables with specific columns) should be appended to the analysis prompt as an explicit output template. Claude is reliable at following markdown templates, and this avoids parsing complexity.
+
+> **Malformed output threshold**: distinguish between two failure modes. (1) *Session failure* (SDK error, timeout, empty response) — do not write anything to disk; surface the error and let the user retry. (2) *Imperfect formatting* (Claude produces valid markdown but deviates from the table structure) — write the output anyway; this is a human-reviewed artifact and the user can tidy it before ticking the checkbox. The dividing line is: did Claude return a non-empty response? If yes, write it. If no, abort. Do not attempt structural validation of the markdown — that would couple the implementation to the output format and add fragility with no real benefit.
 
 ---
 
@@ -74,4 +78,4 @@ Follow the same pattern as `new` — no branch creation, no commit. The branch i
 
 # Complete
 
-- [ ] Ready to advance to Design Review
+- [x] Ready to advance to Design Review

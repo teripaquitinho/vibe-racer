@@ -176,8 +176,8 @@ When `state.yml` contains `trivial: true`, the state machine skips from `need_ob
 stage: need_objective
 title: "fasten-2026-04-15"
 trivial: true
-created: 2026-04-15T10:00:00.000Z
-updated: 2026-04-15T10:00:00.000Z
+created: 2026-04-15T10:00:00.000Z  # illustrative — set to actual run time
+updated: 2026-04-15T10:00:00.000Z  # illustrative — set to actual run time
 ```
 
 ---
@@ -187,7 +187,7 @@ updated: 2026-04-15T10:00:00.000Z
 ### No dead code found (Q5a)
 
 - Do **not** create a plan folder
-- Print: `No dead code found — nothing to consolidate.`
+- Print: `No dead code found — nothing to fasten.`
 - Exit with code 0 (success, not an error)
 
 ### Active fasten plan exists (Q6)
