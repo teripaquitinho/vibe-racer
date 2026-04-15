@@ -1,6 +1,6 @@
-stage: need_execution
+stage: ready_to_execute
 title: Add a consolidate function
 created: 2026-04-15T09:11:05.650Z
-updated: 2026-04-15T10:10:57.830Z
-prev: ai_plan_review
-next: ready_to_execute
+updated: 2026-04-15T10:16:13.164Z
+prev: need_execution
+next: fine_tuning

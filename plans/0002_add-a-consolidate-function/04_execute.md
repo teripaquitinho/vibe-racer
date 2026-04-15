@@ -45,7 +45,7 @@ For each milestone:
 
 | Milestone | Name | Status | Commit | Notes |
 |---|---|---|---|---|
-| M1 | Extract `createPlanFolder()` | `pending` | — | — |
+| M1 | Extract `createPlanFolder()` | `done` | — | — |
 | M2 | Analysis runner | `pending` | — | — |
 | M3 | CLI command + integration | `pending` | — | — |
 
@@ -103,4 +103,4 @@ For each milestone:
 
 # Complete
 
-- [ ] Ready to advance to Execution
+- [x] Ready to advance to Execution

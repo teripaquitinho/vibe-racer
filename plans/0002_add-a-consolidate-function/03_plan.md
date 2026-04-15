@@ -186,9 +186,10 @@ None — this is a new runner that calls existing infrastructure.
    ```
 
    Heuristic:
-   - Check if all three table sections (Safe to Delete, Needs Review, Keep but Flag) have no data rows. A data row starts with `|` and contains content beyond just header separators (`|---|`).
-   - Also check for explicit "no dead code found" phrase (case-insensitive).
-   - Return `true` if no data rows found in any table OR the explicit phrase is present.
+   - Check for an explicit "no dead code found" phrase (case-insensitive) in the response.
+   - Return `true` if the phrase is present, `false` otherwise.
+
+   Do not attempt structural table parsing — the design spec explicitly ruled this out (Q4: "do not attempt structural validation of the markdown"). The output template instructs Claude to include this phrase when no findings exist, so lexical detection is sufficient and avoids coupling the implementation to the table format.
 
 3. **Create test fixtures**:
    - `tests/fixtures/fasten-with-findings.md` — valid analysis output with entries in all three tables, following the exact product spec format
@@ -208,8 +209,8 @@ None — this is a new runner that calls existing infrastructure.
   - Test: calls `runAndStream` with `stage: "ai_objective_review"` and `taskPlanPath: ""`
   - Test: calls `runAndStream` with empty persona
   - Test: returns `{ output, isEmpty: false }` when fixture has findings
-  - Test: returns `{ output, isEmpty: true }` when fixture has empty tables
-  - Test: returns `isEmpty: true` when output contains "no dead code found"
+  - Test: returns `{ output, isEmpty: true }` when output contains "no dead code found" (case-insensitive)
+  - Test: returns `{ output, isEmpty: false }` when output contains findings but not the phrase
   - Test: throws when `runAndStream` returns empty string (session failure)
   - Test: includes README.md content in prompt when file exists
   - Test: works without README.md/CLAUDE.md (graceful degradation)
