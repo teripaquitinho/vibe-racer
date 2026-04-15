@@ -100,4 +100,4 @@ Ship as a full command from day one — no flag. The command is self-contained (
 
 # Complete
 
-- [ ] Ready to advance to Plan Review
+- [x] Ready to advance to Plan Review
