@@ -34,6 +34,10 @@
 - **No new features** — this is a cleanup task; do not add functionality
 - **Delete completely** — no commented-out code, no backwards-compatibility shims, no "kept for reference"
 
+## Notes
+
+- **`secrets.test.ts` negative-filename cases** (M2 task 2d): The three "allows" tests (`index.ts`, `package.json`, `.environment.ts`) no longer short-circuit on filename — `scanFiles` proceeds into `checkFileContent`, which calls the mocked `readFileSync`. You **must** keep a `beforeEach` that sets `mockReadFileSync.mockReturnValue(Buffer.from("safe content"))` as the default (the existing `describe("scanFiles")` block already does this). Without that default, `readFileSync` returns `undefined`, `buf.length` throws, and the negative-filename tests will crash instead of asserting `matches.length === 0`.
+
 ## Execution Status
 
 | Milestone | Name | Status | Commit | Notes |
@@ -61,4 +65,4 @@
 
 # Complete
 
-- [ ] Ready to advance to Execution
+- [x] Ready to advance to Execution
