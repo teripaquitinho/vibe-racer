@@ -1,7 +1,7 @@
-stage: need_execution
+stage: ready_to_execute
 title: fasten-2026-04-16
 created: 2026-04-16T07:56:22.458Z
-updated: 2026-04-16T15:27:35.932Z
+updated: 2026-04-16T15:40:32.087Z
 trivial: true
-prev: ai_plan_review
-next: ready_to_execute
+prev: need_execution
+next: fine_tuning
