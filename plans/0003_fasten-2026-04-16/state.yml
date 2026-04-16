@@ -1,4 +1,7 @@
-stage: need_objective
+stage: need_plan
 title: fasten-2026-04-16
 created: 2026-04-16T07:56:22.458Z
+updated: 2026-04-16T15:11:01.031Z
 trivial: true
+prev: ai_design_review
+next: ai_plan_review
