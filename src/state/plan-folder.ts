@@ -5,7 +5,7 @@ import { getNextTaskNumber } from "./discovery.js";
 import type { TaskState } from "./schema.js";
 import { completionSection, completionSectionChecked } from "../pipeline/validation.js";
 
-export interface CreatePlanOptions {
+interface CreatePlanOptions {
   title: string;
   plansDir: string;
   slug: string;
@@ -15,7 +15,7 @@ export interface CreatePlanOptions {
   checked?: boolean;
 }
 
-export interface CreatedPlan {
+interface CreatedPlan {
   taskNumber: number;
   folderName: string;
   planDir: string;

@@ -12,7 +12,7 @@ export function readState(planPath: string): TaskState {
   return stateSchema.parse(raw);
 }
 
-export function writeState(planPath: string, state: TaskState): void {
+function writeState(planPath: string, state: TaskState): void {
   const filePath = path.join(planPath, STATE_FILE);
 
   let prev: Stage | null;

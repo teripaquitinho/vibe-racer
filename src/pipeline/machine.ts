@@ -7,7 +7,7 @@ import { handleExecute } from "./handlers/execute.js";
 import { handleDone } from "./handlers/done.js";
 import { withErrorHandling } from "./handlers/safe-wrapper.js";
 
-export type HandlerFn = (ctx: TaskContext) => Promise<void>;
+type HandlerFn = (ctx: TaskContext) => Promise<void>;
 
 const HANDLERS: Record<string, HandlerFn> = {
   ai_objective_review: withErrorHandling("objective-review", handleObjectiveReview),
@@ -26,6 +26,6 @@ export function dispatch(state: string, ctx: TaskContext): Promise<void> {
   return handler(ctx);
 }
 
-export function hasHandler(state: string): boolean {
+function hasHandler(state: string): boolean {
   return state in HANDLERS;
 }

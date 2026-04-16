@@ -43,7 +43,7 @@
 | Milestone | Name | Status | Commit | Notes |
 |-----------|------|--------|--------|-------|
 | M1 | Safe deletes | `done` | — | 3 source files + 2 deletions |
-| M2 | Un-export internals + test refactors | `pending` | — | 8 source files + 5 test files |
+| M2 | Un-export internals + test refactors | `in_progress` | — | 8 source files + 5 test files |
 
 ## Milestone Summary
 

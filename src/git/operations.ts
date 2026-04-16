@@ -18,7 +18,7 @@ export async function checkoutBranch(
   }
 }
 
-export class SecretDetectedError extends Error {
+class SecretDetectedError extends Error {
   constructor(public readonly matches: SecretMatch[]) {
     const files = matches.map((m) => `  ${m.file}: ${m.reason}`).join("\n");
     super(`Secret scan blocked commit. Flagged files:\n${files}`);
@@ -69,11 +69,11 @@ export async function commitAll(
   return result.commit;
 }
 
-export async function getCurrentBranch(git: SimpleGit): Promise<string> {
+async function getCurrentBranch(git: SimpleGit): Promise<string> {
   return (await git.branchLocal()).current;
 }
 
-export async function branchExists(
+async function branchExists(
   git: SimpleGit,
   branchName: string,
 ): Promise<boolean> {
