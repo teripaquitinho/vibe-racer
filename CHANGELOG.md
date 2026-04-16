@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-04-16
+
+### Added
+
+- `vibe-racer fasten` CLI command — runs a Claude-driven dead code analysis and writes findings into a new plan's `00_objective.md`, ready for the standard pipeline to execute the cleanup
+- Trivial fast-path support: `fasten`-generated plans skip product and design laps, going directly from objective review to plan questions
+
+### Changed
+
+- Un-exported 13 internal symbols across `git/operations`, `git/secrets`, `state/store`, `state/plan-folder`, `state/advancement`, `pipeline/validation`, `pipeline/machine`, and `claude/fasten`; tests now exercise these through public APIs
+
+### Removed
+
+- Deprecated label-based pipeline API (`LABELS`, `LABEL_ORDER`, `nextLabel`, `previousLabel`, `isAgentActionable`, etc.) — fully superseded by the stage-based API
+- Dead config helpers in `src/config/loader.ts` (`detectProjectInfo`, `parseRepoUrl`)
+- Unused `src/utils/links.ts` module (planned share-link feature, never wired up)
+
 ## [0.1.0] - 2026-04-11
 
 First public release.
