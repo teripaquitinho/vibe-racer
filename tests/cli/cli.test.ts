@@ -41,6 +41,7 @@ describe("CLI", () => {
     expect(output).toContain("pitwall");
     expect(output).toContain("drive");
     expect(output).toContain("radio");
+    expect(output).toContain("fasten");
   });
 
   it("init --help shows init description", () => {

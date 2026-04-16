@@ -4,6 +4,7 @@ import { newCommand } from "./new.js";
 import { pitWallCommand } from "./pitwall.js";
 import { driveCommand } from "./drive.js";
 import { radioCommand } from "./radio.js";
+import { fastenCommand } from "./fasten.js";
 import { log } from "../utils/logger.js";
 
 function wrapAction<T extends (...args: never[]) => Promise<void>>(fn: T): T {
@@ -56,6 +57,12 @@ export function createProgram(): Command {
     .description("Pick up the team radio — open an interactive session with the race engineer at a pit stop")
     .option("-t, --task <number>", "Chat about a specific task", parseInt)
     .action(wrapAction(radioCommand));
+
+  program
+    .command("fasten")
+    .description("Run dead code analysis and create a cleanup plan")
+    .option("--force", "Create a new fasten plan even if an active one exists")
+    .action(wrapAction(fastenCommand));
 
   return program;
 }

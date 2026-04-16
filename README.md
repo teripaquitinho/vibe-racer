@@ -1,3 +1,5 @@
+> **vibe-racer is built with vibe-racer.** Every feature in this repo is planned, designed, and executed through the same pipeline you're reading about.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/teripaquitinho/vibe-racer/main/docs/public/logo.png" alt="vibe-racer" width="400" />
 </p>
@@ -94,6 +96,8 @@ Small tasks can be flagged as trivial during objective review, skipping product 
 | `vibe-racer drive --retry` | Retry tasks in error state |
 | `vibe-racer radio` | Pick up the team radio — open an interactive session with the race engineer at a pit stop |
 | `vibe-racer radio --task N` | Open radio for a specific task |
+| `vibe-racer fasten` | Run dead code analysis and create a cleanup plan |
+| `vibe-racer fasten --force` | Create a new fasten plan even if an active one exists |
 
 ## How It Works
 
