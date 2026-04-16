@@ -65,4 +65,4 @@
 
 # Complete
 
-- [x] Ready to advance to Execution
+- [ ] Ready to advance to Cleanup
