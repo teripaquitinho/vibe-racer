@@ -14,9 +14,9 @@ CLI that runs structured AI pipelines ("races") on software tasks using Claude C
 
 ```
 src/
-  cli/          # commander commands (init, new, drive, pitwall, radio)
+  cli/          # commander commands (init, new, drive, pitwall, radio, fasten)
   pipeline/     # state machine, handlers per stage, validation
-  claude/       # SDK session runner, prompt builder, tool guard
+  claude/       # SDK session runner, prompt builder, tool guard, fasten analysis
   state/        # task discovery, state.yml read/write, advancement logic
   git/          # branch management, commits, secret scanning
   config/       # .vibe-racer.yml parsing
@@ -39,3 +39,4 @@ npm run lint         # eslint src/
 - **One branch per task** (`vibe-racer/NNNN_slug`) — created automatically on first `drive`, never pushed automatically.
 - **Persona per lap** — system prompt is extended with a role-specific persona (Product Designer / Architect / Engineer) depending on the current stage.
 - **Tool guard** — `canUseTool` in `src/claude/guard.ts` enforces security rules on every SDK tool call.
+- **Trivial fast-path** — tasks with `trivial: true` in `state.yml` skip product and design laps, going directly from objective review to plan questions.

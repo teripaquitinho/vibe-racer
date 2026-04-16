@@ -112,3 +112,29 @@ vibe-racer radio --task 2
 - Opens a Claude CLI session with the task's context loaded
 - Useful for discussing generated specs, asking questions about the plan, or getting clarification before ticking the checkbox
 - Only available for tasks at pit stop stages
+
+---
+
+## `vibe-racer fasten`
+
+Run dead code analysis and create a cleanup plan.
+
+```bash
+vibe-racer fasten
+vibe-racer fasten --force
+```
+
+**Options:**
+
+| Flag | Description |
+|---|---|
+| `--force` | Create a new fasten plan even if an active one exists |
+
+**What it does:**
+1. Checks for active fasten plans (warns if one exists; use `--force` to override)
+2. Runs a dead code analysis via Claude (read-only — scans codebase without writing)
+3. Creates a plan folder (`NNNN_fasten-YYYY-MM-DD`) with findings in `00_objective.md`
+4. Sets `state.yml` with `trivial: true` — skips product and design laps
+5. Prints a summary; review the findings, tick the checkbox, then `vibe-racer drive`
+
+If no dead code is found, no plan folder is created and a clean message is printed.
