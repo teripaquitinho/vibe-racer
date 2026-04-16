@@ -1,6 +1,6 @@
-stage: fine_tuning
+stage: cleanup_ready
 title: Add a consolidate function
 created: 2026-04-15T09:11:05.650Z
-updated: 2026-04-15T10:25:13.084Z
-prev: ready_to_execute
-next: cleanup_ready
+updated: 2026-04-16T08:24:47.404Z
+prev: fine_tuning
+next: done
