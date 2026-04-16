@@ -69,18 +69,6 @@ export async function commitAll(
   return result.commit;
 }
 
-async function getCurrentBranch(git: SimpleGit): Promise<string> {
-  return (await git.branchLocal()).current;
-}
-
-async function branchExists(
-  git: SimpleGit,
-  branchName: string,
-): Promise<boolean> {
-  const branches = await git.branchLocal();
-  return branches.all.includes(branchName);
-}
-
 export async function getVibeRacerBranches(
   git: SimpleGit,
 ): Promise<string[]> {

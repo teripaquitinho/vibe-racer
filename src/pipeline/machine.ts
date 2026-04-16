@@ -25,7 +25,3 @@ export function dispatch(state: string, ctx: TaskContext): Promise<void> {
   }
   return handler(ctx);
 }
-
-function hasHandler(state: string): boolean {
-  return state in HANDLERS;
-}
