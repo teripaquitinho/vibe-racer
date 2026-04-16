@@ -6,7 +6,7 @@ dist/
 .env*
 .viberacer-secrets
 .viberacer/
-.cheatsheet.md
+.cheatsheet
 
 # OS
 .DS_Store
