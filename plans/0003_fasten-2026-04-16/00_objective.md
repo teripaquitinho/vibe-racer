@@ -42,4 +42,4 @@ Items that are not clearly safe to delete — medium/low confidence, exported-on
 
 # Complete
 
-- [ ] Ready to advance to Plan Questions
+- [x] Ready to advance to Plan Questions

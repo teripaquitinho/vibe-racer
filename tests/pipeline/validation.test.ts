@@ -3,28 +3,43 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "fs";
 import path from "path";
 import os from "os";
 import {
-  validateAnswersFromString,
+  validateAnswers,
   hasCompletionMarker,
   removeCompletionMarker,
   countFollowUpRounds,
 } from "../../src/pipeline/validation.js";
 
-describe("validateAnswersFromString", () => {
-  it("returns complete when all answers are filled", () => {
-    const md = `
+describe("validateAnswers", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "jugg-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeAndValidate(md: string) {
+    const file = path.join(tmpDir, "questions.md");
+    writeFileSync(file, md, "utf-8");
+    return validateAnswers(file);
+  }
+
+  it("returns complete when all answers are filled", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:** Yes, we should do this.
 
 ### Question 2
 **Answer:** No, skip it.
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(true);
     expect(result.unanswered).toEqual([]);
   });
 
-  it("detects blank answers", () => {
-    const md = `
+  it("detects blank answers", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:** Yes, we should do this.
 
@@ -33,47 +48,43 @@ describe("validateAnswersFromString", () => {
 
 ### Question 3
 **Answer:**
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(false);
     expect(result.unanswered).toEqual(["Question 2", "Question 3"]);
   });
 
-  it("detects placeholder answers", () => {
-    const md = `
+  it("detects placeholder answers", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:** <!-- write your answer here -->
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(false);
     expect(result.unanswered).toEqual(["Question 1"]);
   });
 
-  it("treats 'I don't care, you decide' as valid", () => {
-    const md = `
+  it("treats 'I don't care, you decide' as valid", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:** I don't care, you decide.
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(true);
     expect(result.unanswered).toEqual([]);
   });
 
-  it("handles numbered bold question format", () => {
-    const md = `
+  it("handles numbered bold question format", async () => {
+    const result = await writeAndValidate(`
 1. **What is the target platform?**
 **Answer:** Web only.
 
 2. **What is the deadline?**
 **Answer:**
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(false);
     expect(result.unanswered).toEqual(["What is the deadline?"]);
   });
 
-  it("handles multi-line answers", () => {
-    const md = `
+  it("handles multi-line answers", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:** This is a long answer
 that spans multiple lines
@@ -81,14 +92,13 @@ and has lots of detail.
 
 ### Question 2
 **Answer:** Short.
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(true);
     expect(result.unanswered).toEqual([]);
   });
 
-  it("handles all blank answers", () => {
-    const md = `
+  it("handles all blank answers", async () => {
+    const result = await writeAndValidate(`
 ### Q1
 **Answer:**
 
@@ -97,30 +107,27 @@ and has lots of detail.
 
 ### Q3
 **Answer:**
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(false);
     expect(result.unanswered).toEqual(["Q1", "Q2", "Q3"]);
   });
 
-  it("handles markdown with no questions", () => {
-    const md = `# Just a heading\n\nSome text without questions.\n`;
-    const result = validateAnswersFromString(md);
+  it("handles markdown with no questions", async () => {
+    const result = await writeAndValidate(`# Just a heading\n\nSome text without questions.\n`);
     expect(result.complete).toBe(true);
     expect(result.unanswered).toEqual([]);
   });
 
-  it("is case-insensitive for answer marker", () => {
-    const md = `
+  it("is case-insensitive for answer marker", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **answer:** Yes this works.
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(true);
   });
 
-  it("treats answer with only HTML comments as blank", () => {
-    const md = `
+  it("treats answer with only HTML comments as blank", async () => {
+    const result = await writeAndValidate(`
 ### Question 1
 **Answer:**
 <!-- write your answer here -->
@@ -128,8 +135,7 @@ and has lots of detail.
 # Complete
 
 - [x] Ready to advance to Product Review
-`;
-    const result = validateAnswersFromString(md);
+`);
     expect(result.complete).toBe(false);
     expect(result.unanswered).toEqual(["Question 1"]);
   });

@@ -18,7 +18,7 @@ export async function checkoutBranch(
   }
 }
 
-export class SecretDetectedError extends Error {
+class SecretDetectedError extends Error {
   constructor(public readonly matches: SecretMatch[]) {
     const files = matches.map((m) => `  ${m.file}: ${m.reason}`).join("\n");
     super(`Secret scan blocked commit. Flagged files:\n${files}`);
@@ -67,18 +67,6 @@ export async function commitAll(
 
   const result = await git.commit(message);
   return result.commit;
-}
-
-export async function getCurrentBranch(git: SimpleGit): Promise<string> {
-  return (await git.branchLocal()).current;
-}
-
-export async function branchExists(
-  git: SimpleGit,
-  branchName: string,
-): Promise<boolean> {
-  const branches = await git.branchLocal();
-  return branches.all.includes(branchName);
 }
 
 export async function getVibeRacerBranches(

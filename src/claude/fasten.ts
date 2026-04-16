@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { runAndStream } from "./session.js";
 
-export interface FastenAnalysisResult {
+interface FastenAnalysisResult {
   output: string;
   isEmpty: boolean;
 }

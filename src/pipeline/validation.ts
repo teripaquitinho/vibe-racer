@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { readFileSync, writeFileSync } from "fs";
 
-export interface ValidationResult {
+interface ValidationResult {
   complete: boolean;
   unanswered: string[];
 }
@@ -13,7 +13,7 @@ export async function validateAnswers(filePath: string): Promise<ValidationResul
   return validateAnswersFromString(content);
 }
 
-export function validateAnswersFromString(content: string): ValidationResult {
+function validateAnswersFromString(content: string): ValidationResult {
   const lines = content.split("\n");
   const unanswered: string[] = [];
 

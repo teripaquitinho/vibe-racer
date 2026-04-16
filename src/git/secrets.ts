@@ -22,7 +22,7 @@ export interface SecretMatch {
   reason: string;
 }
 
-export function checkFileName(filePath: string): string | null {
+function checkFileName(filePath: string): string | null {
   const name = basename(filePath);
   for (const pattern of SECRET_FILE_PATTERNS) {
     if (pattern.test(name)) {
@@ -32,7 +32,7 @@ export function checkFileName(filePath: string): string | null {
   return null;
 }
 
-export function checkFileContent(filePath: string): string | null {
+function checkFileContent(filePath: string): string | null {
   let content: string;
   try {
     const buf = readFileSync(filePath);

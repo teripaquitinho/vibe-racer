@@ -2,8 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import {
   checkoutBranch,
   commitAll,
-  getCurrentBranch,
-  branchExists,
   getVibeRacerBranches,
   getRemoteUrl,
 } from "../../src/git/operations.js";
@@ -89,26 +87,6 @@ describe("commitAll", () => {
     const hash = await commitAll(git, "feat: add file");
     expect(hash).toBe("abc1234");
     expect(git.commit).toHaveBeenCalledWith("feat: add file");
-  });
-});
-
-describe("getCurrentBranch", () => {
-  it("returns the current branch name", async () => {
-    const git = mockGit();
-    const branch = await getCurrentBranch(git);
-    expect(branch).toBe("main");
-  });
-});
-
-describe("branchExists", () => {
-  it("returns true for existing branch", async () => {
-    const git = mockGit();
-    expect(await branchExists(git, "main")).toBe(true);
-  });
-
-  it("returns false for non-existing branch", async () => {
-    const git = mockGit();
-    expect(await branchExists(git, "nope")).toBe(false);
   });
 });
 

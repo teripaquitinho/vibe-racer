@@ -10,7 +10,7 @@ import {
 } from "../pipeline/validation.js";
 import { log } from "../utils/logger.js";
 
-export interface AdvancementResult {
+interface AdvancementResult {
   advanced: boolean;
   reason: "no_questions_file" | "no_marker" | "incomplete_answers" | "advanced";
 }

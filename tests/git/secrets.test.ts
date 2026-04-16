@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { checkFileName, checkFileContent, scanFiles } from "../../src/git/secrets.js";
+import { scanFiles } from "../../src/git/secrets.js";
 
 // Mock node:fs for content scanning
 const mockReadFileSync = vi.fn();
@@ -8,93 +8,123 @@ vi.mock("node:fs", () => ({
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
 }));
 
-describe("checkFileName", () => {
+describe("scanFiles — filename detection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadFileSync.mockReturnValue(Buffer.from("safe content"));
+  });
+
   it("flags .env", () => {
-    expect(checkFileName("/project/.env")).not.toBeNull();
+    const hits = scanFiles(["/project/.env"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("flags .env.local", () => {
-    expect(checkFileName("/project/.env.local")).not.toBeNull();
+    const hits = scanFiles(["/project/.env.local"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("flags .env.production", () => {
-    expect(checkFileName("/project/.env.production")).not.toBeNull();
+    const hits = scanFiles(["/project/.env.production"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("flags credentials.json", () => {
-    expect(checkFileName("/project/credentials.json")).not.toBeNull();
+    const hits = scanFiles(["/project/credentials.json"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("flags server.pem", () => {
-    expect(checkFileName("/project/certs/server.pem")).not.toBeNull();
+    const hits = scanFiles(["/project/certs/server.pem"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("flags private.key", () => {
-    expect(checkFileName("/project/private.key")).not.toBeNull();
+    const hits = scanFiles(["/project/private.key"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Filename matches");
   });
 
   it("allows normal source files", () => {
-    expect(checkFileName("/project/src/index.ts")).toBeNull();
+    const hits = scanFiles(["/project/src/index.ts"]);
+    expect(hits).toHaveLength(0);
   });
 
   it("allows package.json", () => {
-    expect(checkFileName("/project/package.json")).toBeNull();
+    const hits = scanFiles(["/project/package.json"]);
+    expect(hits).toHaveLength(0);
   });
 
   it("allows .environment.ts", () => {
-    expect(checkFileName("/project/.environment.ts")).toBeNull();
+    const hits = scanFiles(["/project/.environment.ts"]);
+    expect(hits).toHaveLength(0);
   });
 });
 
-describe("checkFileContent", () => {
+describe("scanFiles — content detection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("detects AWS access key", () => {
     mockReadFileSync.mockReturnValue(Buffer.from("key=AKIAIOSFODNN7EXAMPLE"));
-    expect(checkFileContent("/project/config.ts")).not.toBeNull();
-    expect(checkFileContent("/project/config.ts")).toContain("AKIA");
+    const hits = scanFiles(["/project/config.js"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Content matches");
   });
 
   it("detects PEM private key block", () => {
     mockReadFileSync.mockReturnValue(
       Buffer.from("-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----"),
     );
-    expect(checkFileContent("/project/key.txt")).not.toBeNull();
+    const hits = scanFiles(["/project/key.txt"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Content matches");
   });
 
   it("detects GitHub personal access token", () => {
     mockReadFileSync.mockReturnValue(
       Buffer.from("token=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"),
     );
-    expect(checkFileContent("/project/config.ts")).not.toBeNull();
+    const hits = scanFiles(["/project/config.js"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Content matches");
   });
 
   it("detects API key pattern (sk-...)", () => {
     mockReadFileSync.mockReturnValue(
       Buffer.from("api_key=sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv"),
     );
-    expect(checkFileContent("/project/config.ts")).not.toBeNull();
+    const hits = scanFiles(["/project/config.js"]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].reason).toContain("Content matches");
   });
 
   it("allows normal source file content", () => {
     mockReadFileSync.mockReturnValue(
       Buffer.from('export function hello() { return "world"; }'),
     );
-    expect(checkFileContent("/project/src/index.ts")).toBeNull();
+    const hits = scanFiles(["/project/src/index.ts"]);
+    expect(hits).toHaveLength(0);
   });
 
   it("skips files larger than 100 KB", () => {
     mockReadFileSync.mockReturnValue(Buffer.alloc(100 * 1024 + 1));
-    expect(checkFileContent("/project/large-file.bin")).toBeNull();
+    const hits = scanFiles(["/project/large-file.bin"]);
+    expect(hits).toHaveLength(0);
   });
 
-  it("returns null when file cannot be read", () => {
+  it("returns empty when file cannot be read", () => {
     mockReadFileSync.mockImplementation(() => {
       throw new Error("ENOENT");
     });
-    expect(checkFileContent("/project/missing.ts")).toBeNull();
+    const hits = scanFiles(["/project/missing.ts"]);
+    expect(hits).toHaveLength(0);
   });
 });
 

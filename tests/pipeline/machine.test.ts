@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatch, hasHandler } from "../../src/pipeline/machine.js";
+import { dispatch } from "../../src/pipeline/machine.js";
 import type { TaskContext } from "../../src/pipeline/types.js";
 
 vi.mock("../../src/pipeline/handlers/objective-review.js", () => ({
@@ -82,22 +82,28 @@ describe("dispatch", () => {
   });
 });
 
-describe("hasHandler", () => {
-  it("returns true for agent-actionable states", () => {
-    expect(hasHandler("ai_objective_review")).toBe(true);
-    expect(hasHandler("ai_product_review")).toBe(true);
-    expect(hasHandler("ai_design_review")).toBe(true);
-    expect(hasHandler("ai_plan_review")).toBe(true);
-    expect(hasHandler("ready_to_execute")).toBe(true);
-    expect(hasHandler("cleanup_ready")).toBe(true);
+describe("dispatch — handler coverage", () => {
+  it("does not throw for any agent-actionable state", async () => {
+    await expect(dispatch("ai_objective_review", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("ai_product_review", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("ai_design_review", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("ai_plan_review", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("ready_to_execute", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("cleanup_ready", CTX)).resolves.toBeUndefined();
   });
 
-  it("returns false for human states", () => {
-    expect(hasHandler("need_objective")).toBe(false);
-    expect(hasHandler("need_product")).toBe(false);
+  it("throws for human states", () => {
+    expect(() => dispatch("need_objective", CTX)).toThrow(
+      "No handler for state: need_objective",
+    );
+    expect(() => dispatch("need_product", CTX)).toThrow(
+      "No handler for state: need_product",
+    );
   });
 
-  it("returns false for unknown states", () => {
-    expect(hasHandler("random")).toBe(false);
+  it("throws for unknown states", () => {
+    expect(() => dispatch("random", CTX)).toThrow(
+      "No handler for state: random",
+    );
   });
 });
