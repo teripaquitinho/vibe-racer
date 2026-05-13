@@ -6,8 +6,8 @@ hero:
   text: Your AI race engineer
   tagline: Five laps from objective to shipped code — you call the pit stops.
   image:
-    light: /logo.png
-    dark: /logo-white.png
+    light: /logo-squared.png
+    dark: /logo-squared-white.png
     alt: vibe-racer
   actions:
     - theme: brand

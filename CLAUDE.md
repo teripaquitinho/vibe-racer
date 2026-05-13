@@ -4,7 +4,6 @@ CLI that runs structured AI pipelines ("races") on software tasks using Claude C
 
 ## Key docs
 
-- **What it is / pitch**: `pitch.md`
 - **Pipeline stages & architecture**: `docs/how-it-works.md`
 - **All CLI commands**: `docs/commands.md`
 - **Configuration (`.vibe-racer.yml`)**: `docs/configuration.md`
