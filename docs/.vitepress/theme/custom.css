@@ -28,7 +28,14 @@
   --vp-home-hero-image-filter: none;
 }
 
-.VPImage.image-src {
-  max-width: 480px;
-  max-height: 480px;
+.VPHero .VPImage {
+  max-width: 320px;
+  max-height: 320px;
+}
+
+@media (max-width: 768px) {
+  .VPHero .VPImage {
+    max-width: 200px;
+    max-height: 200px;
+  }
 }
