@@ -18,7 +18,7 @@ export async function checkoutBranch(
   }
 }
 
-class SecretDetectedError extends Error {
+export class SecretDetectedError extends Error {
   constructor(public readonly matches: SecretMatch[]) {
     const files = matches.map((m) => `  ${m.file}: ${m.reason}`).join("\n");
     super(`Secret scan blocked commit. Flagged files:\n${files}`);

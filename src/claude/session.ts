@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool } from "@anthropic-ai/claude-agent-sdk";
 import type { Stage } from "../state/schema.js";
 import { createToolGuard, formatGuardSummary } from "./guard.js";
+import { loadConfig } from "../config/loader.js";
 import { log } from "../utils/logger.js";
 
 export interface SessionOptions {
@@ -12,6 +13,7 @@ export interface SessionOptions {
   maxTurns?: number;
   stage?: Stage;
   taskPlanPath?: string;
+  plansDir?: string;
 }
 
 export async function runAndStream(options: SessionOptions): Promise<string> {
@@ -25,6 +27,7 @@ export async function runAndStream(options: SessionOptions): Promise<string> {
       cwd: options.cwd,
       stage: options.stage,
       taskPlanPath: options.taskPlanPath ?? "",
+      plansDir: options.plansDir ?? loadConfig(options.cwd).plans_dir,
     });
     canUseTool = guard;
     log.guard(formatGuardSummary(options.stage, options.allowedTools ?? []));

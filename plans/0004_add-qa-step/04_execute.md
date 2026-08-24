@@ -62,7 +62,7 @@ For each milestone:
 |---|---|---|---|---|
 | M1 | Schema + State Machine | `done` | | |
 | M2 | Trivial Fast-Path Re-Plumb | `done` | | |
-| M3 | Guard Hardening + Error Recovery | `pending` | | |
+| M3 | Guard Hardening + Error Recovery | `done` | | |
 | M4 | Skills Module | `pending` | | |
 | M5a | QA Handler + Execute Rewiring | `pending` | | AC2 fixture result goes here |
 | M5b | Decision Stage + Checklist Enforcement | `pending` | | |

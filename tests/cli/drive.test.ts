@@ -22,6 +22,7 @@ vi.mock("../../src/state/advancement.js", () => ({
 
 vi.mock("../../src/state/store.js", () => ({
   readState: vi.fn().mockReturnValue({ stage: "need_objective" }),
+  updateStage: vi.fn(),
 }));
 
 vi.mock("../../src/git/operations.js", () => ({
@@ -75,5 +76,55 @@ describe("driveCommand", () => {
     expect(logger.log.dim).toHaveBeenCalledWith(
       expect.stringContaining("Waiting on human input"),
     );
+  });
+
+  it("--retry with valid error_stage restores and dispatches once", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 1, slug: "test", title: "Test", stage: "error" as any, planPath: "/tmp/plans/0001_test" },
+    ]);
+
+    const { readState, updateStage } = await import("../../src/state/store.js");
+    vi.mocked(readState).mockReturnValue({
+      stage: "error",
+      title: "Test",
+      error_stage: "ai_product_review",
+      error_message: "context exceeded",
+    } as any);
+
+    const { dispatch } = await import("../../src/pipeline/machine.js");
+
+    const { driveCommand } = await import("../../src/cli/drive.js");
+    await driveCommand({ task: 1, retry: true });
+
+    expect(updateStage).toHaveBeenCalledWith("/tmp/plans/0001_test", "ai_product_review");
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith("ai_product_review", expect.anything());
+  });
+
+  it("--retry with legacy handler-name error_stage prints message without throwing", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 1, slug: "test", title: "Test", stage: "error" as any, planPath: "/tmp/plans/0001_test" },
+    ]);
+
+    const { readState } = await import("../../src/state/store.js");
+    vi.mocked(readState).mockReturnValue({
+      stage: "error",
+      title: "Test",
+      error_stage: "design-review",
+      error_message: "failed",
+    } as any);
+
+    const { dispatch } = await import("../../src/pipeline/machine.js");
+
+    const { driveCommand } = await import("../../src/cli/drive.js");
+    await driveCommand({ task: 1, retry: true });
+
+    const logger = await import("../../src/utils/logger.js");
+    expect(logger.log.error).toHaveBeenCalledWith(
+      expect.stringContaining("design-review"),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

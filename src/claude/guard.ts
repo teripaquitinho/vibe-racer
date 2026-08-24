@@ -10,9 +10,18 @@ export interface GuardOptions {
   cwd: string;
   stage: Stage;
   taskPlanPath: string;
+  plansDir: string;
 }
 
-const REVIEW_STAGES: Set<Stage> = new Set([
+const PLAN_JAILED_STAGES: Set<Stage> = new Set([
+  "ai_objective_review",
+  "ai_product_review",
+  "ai_design_review",
+  "ai_plan_review",
+  "ai_qa",
+]);
+
+const BASH_BLOCKED_STAGES: Set<Stage> = new Set([
   "ai_objective_review",
   "ai_product_review",
   "ai_design_review",
@@ -111,6 +120,14 @@ const PATH_TOOLS: Set<string> = new Set([
   "Glob",
   "Grep",
 ]);
+
+function realpathIfExists(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
 
 function resolveToolPath(inputPath: string, cwd: string): string {
   const resolved = resolve(cwd, inputPath);
@@ -292,6 +309,14 @@ export function createToolGuard(options: GuardOptions): CanUseTool {
         if (rawPath !== null) {
           const resolved = resolveToolPath(rawPath, cwd);
 
+          // Rule 0: Deny agent writes to state.yml under plans_dir
+          if (toolName === "Write" || toolName === "Edit") {
+            const plansRoot = realpathIfExists(resolve(cwd, options.plansDir)) + sep;
+            if (basename(resolved) === "state.yml" && resolved.startsWith(plansRoot)) {
+              return deny(toolName, rawPath, "state.yml is owned by the pipeline");
+            }
+          }
+
           // Rule 1: Sensitive path blocklist
           if (isSensitivePath(resolved)) {
             return deny(toolName, rawPath, "sensitive path");
@@ -308,8 +333,8 @@ export function createToolGuard(options: GuardOptions): CanUseTool {
             return deny(toolName, rawPath, "file may contain secrets");
           }
 
-          // Rule 4: Review-stage Write/Edit restriction
-          if ((toolName === "Write" || toolName === "Edit") && REVIEW_STAGES.has(stage)) {
+          // Rule 4a: Plan-jailed stages Write/Edit restriction
+          if ((toolName === "Write" || toolName === "Edit") && PLAN_JAILED_STAGES.has(stage)) {
             const planDir = resolve(cwd, taskPlanPath) + sep;
             if (!resolved.startsWith(planDir) && resolved !== resolve(cwd, taskPlanPath)) {
               return deny(toolName, rawPath, `review stage: writes restricted to ${taskPlanPath}/`);
@@ -318,6 +343,14 @@ export function createToolGuard(options: GuardOptions): CanUseTool {
         }
         // No path field (Glob/Grep default to cwd) → allow
       }
+
+      // Rule 4b: review stages may not shell out at all
+      if (BASH_BLOCKED_STAGES.has(options.stage) && toolName === "Bash") {
+        return deny(toolName, String(input.command ?? ""), "review stage: bash not permitted");
+      }
+
+      // Skill: explicit allow
+      if (toolName === "Skill") return { behavior: "allow" as const };
 
       // Rule 5: Bash command filter
       if (toolName === "Bash") {
@@ -344,9 +377,9 @@ export function formatGuardSummary(
   stage: Stage,
   allowedTools: string[],
 ): string {
-  const tools = allowedTools.join(", ");
-  if (REVIEW_STAGES.has(stage)) {
-    return `Guard: path-jail to ./  ·  tools: [${tools}]  ·  bash: blocked (review stage)`;
-  }
-  return `Guard: path-jail to ./  ·  tools: [${tools}]  ·  bash: ${BASH_BLOCKLIST.length} commands blocked`;
+  const jailed = PLAN_JAILED_STAGES.has(stage);
+  const bashBlocked = BASH_BLOCKED_STAGES.has(stage);
+  const pathNote = jailed ? "path-jail to ./<plan>" : "path-jail to ./";
+  const bashNote = bashBlocked ? "bash: blocked (review stage)" : `bash: ${BASH_BLOCKLIST.length} commands blocked`;
+  return `Guard: ${pathNote}  ·  tools: [${allowedTools.join(", ")}]  ·  ${bashNote}`;
 }

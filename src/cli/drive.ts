@@ -3,7 +3,7 @@ import { loadConfig } from "../config/loader.js";
 import { checkPrerequisites } from "../config/prerequisites.js";
 import { discoverTasks } from "../state/discovery.js";
 import { tryAdvance } from "../state/advancement.js";
-import { readState } from "../state/store.js";
+import { readState, updateStage } from "../state/store.js";
 import { isAgentStage, isHumanStage, STAGE_QUESTIONS_FILE, STAGE_NEXT_NAME } from "../pipeline/states.js";
 import { createGit, checkoutBranch } from "../git/operations.js";
 import { taskBranchName, taskPlanFolder } from "../git/slug.js";
@@ -11,7 +11,7 @@ import { dispatch } from "../pipeline/machine.js";
 import type { TaskContext } from "../pipeline/types.js";
 import { log } from "../utils/logger.js";
 import { selectTask } from "./task-select.js";
-import type { Stage } from "../state/schema.js";
+import { STAGES, type Stage } from "../state/schema.js";
 
 export async function driveCommand(opts: {
   task?: number;
@@ -105,6 +105,21 @@ export async function driveCommand(opts: {
     trivial: task.trivial,
   };
 
-  log.info(`Dispatching handler for [${task.stage}]...`);
-  await dispatch(task.stage, ctx);
+  let target: Stage = task.stage;
+
+  if (task.stage === "error") {
+    const errorStage = readState(task.planPath).error_stage;
+    if (errorStage && (STAGES as readonly string[]).includes(errorStage)) {
+      target = errorStage as Stage;
+      updateStage(task.planPath, target);
+      log.info(`Retrying task #${task.number} from [${target}]`);
+    } else {
+      log.error(`Task #${task.number} failed at '${errorStage ?? "unknown"}' (unrecognized stage).`);
+      log.error(`Set 'stage:' in ${task.planPath}/state.yml manually and re-run 'drive'.`);
+      return;
+    }
+  }
+
+  log.info(`Dispatching handler for [${target}]...`);
+  await dispatch(target, ctx);
 }
