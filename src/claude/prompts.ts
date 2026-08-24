@@ -121,29 +121,25 @@ Before generating product questions, assess whether this task is **trivial**. A 
 
 ### If trivial:
 
-1. Read the current \`${ctx.planPath}/state.yml\`, preserve all existing fields
-2. Add \`trivial: true\` to the state:
-   \`\`\`yaml
-   stage: ai_objective_review
-   title: "..."
-   trivial: true
-   \`\`\`
-3. Write \`${ctx.planPath}/03_plan_questions.md\` (skipping product and design stages) with this header:
-   \`\`\`
-   # Plan Questions for #${ctx.taskNumber}: ${ctx.title}
+Write \`${ctx.planPath}/03_plan_questions.md\` (plan questions) directly instead of \`01_product_questions.md\` (product questions). Do NOT write or modify \`state.yml\`.
 
-   > **Role**: Senior Software Engineer
-   > **Stage**: \`ai_objective_review\` → \`need_plan\` (trivial fast-path)
-   > **Date**: ${new Date().toISOString().split("T")[0]}
+The file must start with:
+\`\`\`
+# Plan Questions for #${ctx.taskNumber}: ${ctx.title}
 
-   ---
-   \`\`\`
-   Then generate plan questions using the same Q&A format described above, ending with the completion checkbox: \`- [ ] Ready to advance to Plan Review\`
-4. Do NOT write \`01_product_questions.md\`
+> **Role**: Senior Software Engineer
+> **Stage**: \`ai_objective_review\` → \`need_plan\` (trivial fast-path)
+> **Date**: ${new Date().toISOString().split("T")[0]}
+
+---
+\`\`\`
+Then generate plan questions using the same Q&A format described above, ending with the completion checkbox: \`- [ ] Ready to advance to Plan Review\`
+
+Do NOT write \`01_product_questions.md\`.
 
 ### If not trivial:
 
-Proceed normally — write \`${ctx.planPath}/01_product_questions.md\` as described above. Do NOT set \`trivial\` in state.yml.
+Proceed normally — write \`${ctx.planPath}/01_product_questions.md\` as described above.
 
 ## Rules
 
