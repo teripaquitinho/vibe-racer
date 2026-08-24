@@ -124,4 +124,18 @@ describe("stateSchema", () => {
       stateSchema.parse({ stage: "need_objective", title: "Test", prev: "bogus" }),
     ).toThrow();
   });
+
+  it("contains exactly 16 stages", () => {
+    expect(STAGES.length).toBe(16);
+  });
+
+  it("parses ai_qa stage", () => {
+    const result = stateSchema.parse({ stage: "ai_qa", title: "Test" });
+    expect(result.stage).toBe("ai_qa");
+  });
+
+  it("parses need_decision stage", () => {
+    const result = stateSchema.parse({ stage: "need_decision", title: "Test" });
+    expect(result.stage).toBe("need_decision");
+  });
 });

@@ -11,8 +11,10 @@ export const STAGES = [
   "ai_plan_review",
   "need_execution",
   "ready_to_execute",
+  "ai_qa",
   "fine_tuning",
   "cleanup_ready",
+  "need_decision",
   "done",
   "error",
 ] as const;

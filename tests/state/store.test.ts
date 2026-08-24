@@ -77,7 +77,7 @@ describe("updateStage", () => {
     writeTmpState({ stage: "need_objective", title: "Test" });
     updateStage(tmpDir, "done");
     const state = readState(tmpDir);
-    expect(state.prev).toBe("cleanup_ready");
+    expect(state.prev).toBe("need_decision");
     expect(state.next).toBeNull();
   });
 
