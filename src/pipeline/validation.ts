@@ -96,6 +96,23 @@ export function countFollowUpRounds(filePath: string): number {
   return matches ? matches.length : 0;
 }
 
+export function validateDecisionChecklist(filePath: string): {
+  valid: boolean;
+  unchecked: Array<{ line: number; text: string }>;
+} {
+  const content = readFileSync(filePath, "utf-8");
+  const lines = content.split("\n");
+  const unchecked: Array<{ line: number; text: string }> = [];
+  for (let i = 0; i < lines.length; i++) {
+    // Leading whitespace is matched on purpose: an indented "- [ ]" is still an unworked
+    // item, and anchoring at column 0 would let a nested checklist close a task silently.
+    if (/^\s*[-*]\s*\[\s\]/.test(lines[i])) {
+      unchecked.push({ line: i + 1, text: lines[i].trim() });
+    }
+  }
+  return { valid: unchecked.length === 0, unchecked };
+}
+
 export function removeCompletionMarker(filePath: string): void {
   let content = readFileSync(filePath, "utf-8");
   // Uncheck the checkbox, preserving the text after it

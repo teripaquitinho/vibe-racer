@@ -79,4 +79,41 @@ describe("tryAdvance", () => {
     expect(result.advanced).toBe(false);
     expect(result.reason).toBe("no_questions_file");
   });
+
+  it("returns incomplete_checklist at need_decision with unticked items", async () => {
+    writeFileSync(
+      path.join(planDir, "state.yml"),
+      stringify({ stage: "need_decision", title: "Test" }),
+      "utf-8",
+    );
+    writeFileSync(
+      path.join(planDir, "06_decision.md"),
+      "# Decision\n\n- [ ] Verify deploy\n- [x] Check logs\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = await tryAdvance(PLAN_REL, "need_decision", tmpDir);
+    expect(result.advanced).toBe(false);
+    expect(result.reason).toBe("incomplete_checklist");
+    // Completion marker should be unchecked
+    const content = readFileSync(path.join(planDir, "06_decision.md"), "utf-8");
+    expect(content).toContain("- [ ] Ready to advance to Done");
+  });
+
+  it("advances at need_decision when all items are ticked", async () => {
+    writeFileSync(
+      path.join(planDir, "state.yml"),
+      stringify({ stage: "need_decision", title: "Test" }),
+      "utf-8",
+    );
+    writeFileSync(
+      path.join(planDir, "06_decision.md"),
+      "# Decision\n\n- [x] Verify deploy\n- [x] Check logs\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = await tryAdvance(PLAN_REL, "need_decision", tmpDir);
+    expect(result.advanced).toBe(true);
+    expect(result.reason).toBe("advanced");
+    const state = readState(planDir);
+    expect(state.stage).toBe("done");
+  });
 });

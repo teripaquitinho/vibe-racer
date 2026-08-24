@@ -102,6 +102,36 @@ describe("driveCommand", () => {
     expect(dispatch).toHaveBeenCalledWith("ai_product_review", expect.anything());
   });
 
+  it("at fine_tuning, waiting-on-human line names 05_qa.md and Cleanup", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 1, slug: "test", title: "Test", stage: "fine_tuning", planPath: "/tmp/plans/0001_test" },
+    ]);
+
+    const { driveCommand } = await import("../../src/cli/drive.js");
+    await driveCommand({});
+
+    const logger = await import("../../src/utils/logger.js");
+    const dimCalls = vi.mocked(logger.log.dim).mock.calls.flat().join(" ");
+    expect(dimCalls).toContain("05_qa.md");
+    expect(dimCalls).toContain("Cleanup");
+  });
+
+  it("at need_decision, waiting-on-human line names 06_decision.md and Done", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 1, slug: "test", title: "Test", stage: "need_decision", planPath: "/tmp/plans/0001_test" },
+    ]);
+
+    const { driveCommand } = await import("../../src/cli/drive.js");
+    await driveCommand({});
+
+    const logger = await import("../../src/utils/logger.js");
+    const dimCalls = vi.mocked(logger.log.dim).mock.calls.flat().join(" ");
+    expect(dimCalls).toContain("06_decision.md");
+    expect(dimCalls).toContain("Done");
+  });
+
   it("--retry with legacy handler-name error_stage prints message without throwing", async () => {
     const { discoverTasks } = await import("../../src/state/discovery.js");
     vi.mocked(discoverTasks).mockReturnValue([

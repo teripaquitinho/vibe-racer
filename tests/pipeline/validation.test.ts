@@ -7,6 +7,7 @@ import {
   hasCompletionMarker,
   removeCompletionMarker,
   countFollowUpRounds,
+  validateDecisionChecklist,
 } from "../../src/pipeline/validation.js";
 
 describe("validateAnswers", () => {
@@ -256,5 +257,68 @@ describe("countFollowUpRounds", () => {
     ).join("\n");
     writeFileSync(file, `# Product Questions\n\n## Scope\n\n${questions}`, "utf-8");
     expect(countFollowUpRounds(file)).toBe(0);
+  });
+});
+
+describe("validateDecisionChecklist", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "jugg-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns valid: true when all items are ticked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n- [x] Check logs\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(true);
+    expect(result.unchecked).toEqual([]);
+  });
+
+  it("returns unticked items with correct line numbers", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n- [ ] Check logs\n- [ ] Run smoke test\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(false);
+    expect(result.unchecked).toHaveLength(2);
+    expect(result.unchecked[0]).toEqual({ line: 4, text: "- [ ] Check logs" });
+    expect(result.unchecked[1]).toEqual({ line: 5, text: "- [ ] Run smoke test" });
+  });
+
+  it("does not count - [x] Ready to advance to Done as unchecked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(true);
+    expect(result.unchecked).toEqual([]);
+  });
+
+  it("counts an indented - [ ] sub-item as unchecked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Top-level item\n  - [ ] Indented sub-item\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(false);
+    expect(result.unchecked).toHaveLength(1);
+    expect(result.unchecked[0].text).toBe("- [ ] Indented sub-item");
   });
 });

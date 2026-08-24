@@ -138,4 +138,25 @@ describe("stateSchema", () => {
     const result = stateSchema.parse({ stage: "need_decision", title: "Test" });
     expect(result.stage).toBe("need_decision");
   });
+
+  it("backward compat: old state.yml with stage ready_to_execute and next fine_tuning still parses", () => {
+    const result = stateSchema.parse({
+      stage: "ready_to_execute",
+      title: "Old task",
+      next: "fine_tuning",
+    });
+    expect(result.stage).toBe("ready_to_execute");
+    expect(result.next).toBe("fine_tuning");
+  });
+
+  it("backward compat: error record with legacy handler-name error_stage still parses", () => {
+    const result = stateSchema.parse({
+      stage: "error",
+      title: "Broken task",
+      error_stage: "design-review",
+      error_message: "session failed",
+    });
+    expect(result.stage).toBe("error");
+    expect(result.error_stage).toBe("design-review");
+  });
 });

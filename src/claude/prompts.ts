@@ -619,6 +619,40 @@ ${specFiles}   - \`${ctx.planPath}/03_plan.md\`
   return { prompt, persona: PERSONAS.softwareEngineer };
 }
 
+export function decisionPrompt(ctx: TaskContext): {
+  prompt: string;
+  persona: string;
+} {
+  const prompt = `
+You are a Release Manager preparing the post-deploy checklist for task #${ctx.taskNumber}: "${ctx.title}".
+
+## Context
+
+Read these files for full context:
+- \`${ctx.planPath}/00_objective.md\` — original intent
+- \`${ctx.planPath}/03_plan.md\` — acceptance criteria and implementation plan
+- \`${ctx.planPath}/05_qa.md\` — QA findings, risks, known limitations
+
+## Instructions
+
+Write \`${ctx.planPath}/06_decision.md\` with a checklist of everything that must be verified
+AFTER DEPLOY before this task can be considered delivered.
+
+Every item must be:
+- Concretely checkable: what to look at, where, and what "good" looks like
+- Traced to a source: the objective, an acceptance criterion, or a QA risk
+
+Use markdown checkboxes. Prefer flat, top-level \`- [ ]\` items; avoid nesting.
+
+Do NOT include boilerplate items. Every item must be specific to this task.
+
+If the plan documents accepted residual risks, each must appear as a named item
+in the checklist so the operator signs off on them knowingly.
+`.trim();
+
+  return { prompt, persona: PERSONAS.releaseManager };
+}
+
 export function qaPrompt(ctx: TaskContext): {
   prompt: string;
   persona: string;

@@ -13,6 +13,7 @@ import {
   donePrompt,
   chatPrompt,
   qaPrompt,
+  decisionPrompt,
 } from "../../src/claude/prompts.js";
 import type { TaskContext } from "../../src/pipeline/types.js";
 
@@ -448,6 +449,43 @@ describe("qaPrompt", () => {
   it("includes diff fallback clause", () => {
     const { prompt } = qaPrompt(CTX);
     expect(prompt).toContain("Fall back to reviewing every");
+  });
+});
+
+describe("decisionPrompt", () => {
+  it("references 06_decision.md", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("06_decision.md");
+  });
+
+  it("asks for flat top-level checkboxes", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("flat, top-level");
+    expect(prompt).toContain("- [ ]");
+  });
+
+  it("references context files: objective, plan, qa", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("00_objective.md");
+    expect(prompt).toContain("03_plan.md");
+    expect(prompt).toContain("05_qa.md");
+  });
+
+  it("uses releaseManager persona", () => {
+    const { persona } = decisionPrompt(CTX);
+    expect(persona).toBe(PERSONAS.releaseManager);
+  });
+
+  it("mentions residual risks", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("residual risk");
+  });
+});
+
+describe("chatPrompt — need_decision persona", () => {
+  it("CHAT_PERSONA_MAP['need_decision'] resolves to releaseManager", () => {
+    const { systemPrompt } = chatPrompt(CTX, "need_decision");
+    expect(systemPrompt).toContain(PERSONAS.releaseManager);
   });
 });
 
