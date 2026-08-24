@@ -38,7 +38,7 @@ The three workstreams ship together because they touch the same core files (`sta
 
 | Workstream | Purpose |
 |---|---|
-| A — `state.yml` corruption fix | Deny agent writes to `state.yml`, harden `setError`, validate on write, re-plumb the trivial fast-path |
+| A — `state.yml` corruption fix and error recovery | Deny agent writes to `state.yml`, harden `setError`, validate on write, re-plumb the trivial fast-path, make `drive --retry` actually work |
 | B — Engineering skills | Wire `Skill` tool into sessions, per-lap skill defaults, graceful degradation for missing skills |
 | C — QA and decision laps | Two new stages (`ai_qa`, `need_decision`), two new documents (`05_qa.md`, `06_decision.md`), updated `radio` personas |
 
@@ -46,7 +46,7 @@ The three workstreams ship together because they touch the same core files (`sta
 
 ## State Machine
 
-The pipeline extends from 12 stages to 14. Two new stages are inserted after execution:
+`STAGES` extends from 14 entries to 16 — or 13 to 15 in `STAGE_ORDER`, which filters out `error`. Two new stages are inserted after execution:
 
 ```
 need_objective   → ai_objective_review
@@ -94,7 +94,11 @@ A QA lap that reports everything as fine is worse than no QA lap — it launders
 
 ### Guard treatment
 
-QA must not fix what it is judging — writes are jailed to the plan directory. However, QA needs `Bash` to run tests. This means `ai_qa` cannot simply be added to `REVIEW_STAGES` (which blocks Bash). It requires its own guard treatment: plan-directory write jail, but Bash allowed.
+QA must not fix what it is judging — writes are jailed to the plan directory. QA also needs `Bash` to run tests.
+
+**Correction to an earlier reading:** `REVIEW_STAGES` does not block Bash. The guard's only stage-conditional rule is the Write/Edit path jail (`guard.ts` Rule 4). Bash is kept out of review stages by each handler's `ALLOWED_TOOLS` — `review-runner.ts` simply omits it — and `formatGuardSummary` merely *prints* `bash: blocked (review stage)`, which is a cosmetic string, not enforcement. So `ai_qa` could join `REVIEW_STAGES` as-is and still run Bash; the only breakage would be that summary line lying.
+
+`ai_qa`'s actual requirement is therefore: plan-directory write jail, Bash allowed, and a guard summary that tells the truth. Whether to also make Bash gating explicit in the guard — rather than leaving it to `allowedTools` alone — is a design-lap decision, and would be a deliberate hardening rather than a refactor.
 
 ### Completion checkbox
 
@@ -124,7 +128,7 @@ This stage is unchanged in kind but shifted in purpose. The operator reads QA fi
 
 **Power-user escape hatch:** If the operator wants a fresh QA opinion after substantial fixes, they can manually edit `stage:` in `state.yml` back to `ai_qa` and run `drive` again. The new guard rule denies *agent* writes to `state.yml`, but the file remains the operator's to edit. Document this in `docs/pipeline.md` as an escape hatch, not as the normal flow.
 
-There is no CLI affordance for moving a task backward through the pipeline. `--retry` only widens `drive`'s eligibility to tasks in `error`, and nothing in the codebase walks `STAGE_ORDER` in reverse.
+There is no CLI affordance for moving a task backward through the pipeline. `--retry` (Workstream A, Fix 4) recovers a task that *failed* at a stage; it does not rewind one that completed successfully, and nothing in the codebase walks `STAGE_ORDER` in reverse.
 
 ---
 
@@ -291,6 +295,12 @@ New guard rule in `guard.ts`, placed *before* the existing review-stage rule (Ru
 
 `setError` in `store.ts` must survive an unparseable `state.yml`. Salvage `title`/`created` when possible; write a valid `stage: error` record when not.
 
+### Fix 4: Make `drive --retry` work
+
+`--retry` is broken today and both new stages depend on it. It widens `drive`'s eligibility filter to tasks in `error` (`drive.ts`) but never restores a runnable stage, so `dispatch("error", ctx)` is called and throws `No handler for state: error`. `setError` cannot help: `withErrorHandling` passes it a *handler name* (`"execute"`, `"design-review"`, `"done"`), and `writeState` only copies `error_stage` into `prev` when it is a valid `Stage` — which a handler name never is. So `prev` is always `null` on an error record.
+
+The fix is to record the stage instead of the handler name, then restore it on retry. Recovery re-runs the failed stage from the top; there is no mid-stage resume.
+
 ### Fix 3: Validate on write
 
 `writeState` validates before serializing, so bad state surfaces at the write that caused it rather than the next read.
@@ -326,8 +336,9 @@ Renders both new stages (`ai_qa`, `need_decision`) in the stage display.
 
 | Scenario | Behavior |
 |---|---|
-| QA session fails mid-run | Task enters `error`. Operator uses `drive --retry` to re-run QA from scratch. |
-| Cleanup session fails before writing `06_decision.md` | Task enters `error`. Retry re-runs the full cleanup session. |
+| QA session fails mid-run | Task enters `error` with `error_stage: ai_qa`. `drive --retry` restores that stage and re-runs QA from scratch. |
+| Cleanup session fails before writing `06_decision.md` | Task enters `error` with `error_stage: cleanup_ready`. `drive --retry` restores that stage and re-runs the full cleanup session. |
+| Task sits in `error` from a pre-fix release, where `error_stage` holds a handler name rather than a stage | `--retry` cannot resolve a stage. `drive` reports the recorded `error_stage` and tells the operator to set `stage:` in `state.yml` by hand. No crash. |
 | Operator ticks decision completion with unticked checklist items | `tryAdvance` rejects advancement. Operator must tick all items, delete lines, or add skip notes. |
 | Agent attempts to write `state.yml` at any stage | Guard denies the write. Denial is logged to `.vibe-racer/audit.log`. Session continues. |
 | `state.yml` is corrupted when `setError` is called | `setError` writes a valid `stage: error` record, salvaging `title`/`created` if possible. |
@@ -346,6 +357,7 @@ Renders both new stages (`ai_qa`, `need_decision`) in the stage display.
 - Per-lap skill configuration, defaults, and prompt integration across all seven laps
 - The three fixes from `vibe-racer-fix.md` plus trivial fast-path re-plumbing
 - Checklist enforcement in `tryAdvance` for `need_decision`
+- A working `drive --retry`: error records carry a real stage, and retry restores and re-dispatches it
 - Updated `pitwall` stage display, `drive` hints, `radio` personas
 - Docs: README, CLAUDE.md, pipeline docs, configuration docs, CHANGELOG
 - Regression tests including the three named in `vibe-racer-fix.md`
@@ -355,7 +367,8 @@ Renders both new stages (`ai_qa`, `need_decision`) in the stage display.
 - Automated remediation of QA findings
 - Deploy automation of any kind
 - Re-running QA in a loop until clean
-- CLI command to move a task backward through the pipeline
+- CLI command to move a task backward through the pipeline. Fixing `--retry` restores the stage a task *failed at*, which is not the same as rewinding a successfully completed stage
+- Mid-stage resume: retry re-runs the failed stage from the beginning
 - Changes to the existing five laps' outputs beyond skill references
 - Local web dashboard and other backlog items
 
@@ -372,4 +385,5 @@ Renders both new stages (`ai_qa`, `need_decision`) in the stage display.
 7. Configured skills appear in the relevant lap's prompt; an unconfigured or missing skill produces a warning and a lap that still completes.
 8. `pitwall` renders both new stages; `drive` names the right file and checkbox for each.
 9. `tryAdvance` at `need_decision` rejects advancement when checklist items in `06_decision.md` are unticked.
-10. Docs describe the full seven-lap pipeline with no stale five-lap references, and `vibe-racer-fix.md` is deleted from the repo root.
+10. `drive --retry` on a task in `error` restores the failed stage and re-dispatches its handler, for a failure in any stage including `ai_qa` and `cleanup_ready`. A task whose `error_stage` is not a valid stage produces an actionable message rather than `No handler for state: error`.
+11. Docs describe the full seven-lap pipeline with no stale five-lap references, and `vibe-racer-fix.md` is deleted from the repo root.
