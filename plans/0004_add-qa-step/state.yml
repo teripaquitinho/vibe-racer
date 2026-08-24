@@ -1,6 +1,6 @@
-stage: need_product
+stage: need_design
 title: Add QA step
 created: 2026-08-24T00:00:00.000Z
-updated: 2026-08-24T07:58:14.885Z
-prev: ai_objective_review
-next: ai_product_review
+updated: 2026-08-24T08:30:59.433Z
+prev: ai_product_review
+next: ai_design_review

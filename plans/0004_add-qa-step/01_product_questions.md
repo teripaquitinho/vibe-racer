@@ -37,7 +37,11 @@ Yes, enforce it. `tryAdvance` should verify that every `- [ ]` checkbox in `06_d
 Trivial tasks currently skip product and design laps, going straight from objective review to plan questions. The question is whether they should also skip QA and decision (objective → plan → execute → cleanup → done), or whether even a small change deserves verification and a close-out gate.
 
 **Answer:**
-Trivial tasks skip both QA and decision. The trivial fast-path exists because small, bounded changes do not warrant the full ceremony. QA's value comes from catching gaps between a complex plan and its implementation — a trivial task has a thin plan and a narrow diff, so the QA lap would mostly parrot "everything looks fine." The existing cleanup pass (build, lint, tests) is sufficient verification for trivial scope. The pipeline for trivial tasks remains: objective → plan → execute → cleanup → done.
+No — trivial tasks run QA and decision like every other task. Verification should not scale down with scope. A trivial task has a thin plan and a narrow diff, which is precisely the situation where an unverified "done" slips through unnoticed: nobody is watching a small change closely. The QA lap on a small diff is correspondingly small, and that is the feature, not wasted ceremony.
+
+Keeping trivial tasks on the full back half also keeps the state machine honest. The `trivial` flag today gates exactly one branch — `objective-review.ts` choosing `need_plan` over `need_product`. Skipping QA and decision would add two more branches, in `handleExecute` and `handleDone`, on a flag whose plumbing Workstream A is already rewriting. `trivial` stays a front-half concept only: it skips product and design, and nothing else.
+
+The pipeline for trivial tasks is: objective → plan → execute → QA → fine-tuning → cleanup → decision → done.
 
 ---
 
@@ -59,7 +63,11 @@ Keep calling them laps and update the headline to seven. The metaphor is already
 The QA lap will sometimes report genuine issues — unmet acceptance criteria, regressions, half-built features. The objective explicitly excludes automated remediation loops, so the operator must fix things manually. But the current pipeline has no formal mechanism for "go back and fix, then re-run QA." The operator's options need to be clear: do they use `radio` to make fixes during `fine_tuning`, then re-run QA? Or do they fix during `fine_tuning` and advance without re-verifying?
 
 **Answer:**
-The operator uses `radio` at the `fine_tuning` pit stop to make fixes, then advances to `cleanup_ready`. There is no "re-run QA" loop — that is explicitly out of scope, and introducing it would complicate the linear state machine. The workflow is: (1) QA writes `05_qa.md` with findings, (2) operator reads findings at `fine_tuning`, (3) operator uses `radio` to fix issues, (4) operator ticks the checkbox to advance, (5) the cleanup session (which already runs build/lint/tests) serves as the re-verification pass. If the operator wants a fresh QA opinion after significant fixes, they can reset the task to `ai_qa` using the existing `--retry` mechanism — but this is a power-user escape hatch, not the default flow.
+The operator uses `radio` at the `fine_tuning` pit stop to make fixes, then advances to `cleanup_ready`. The workflow is: (1) QA writes `05_qa.md` with findings, (2) the operator reads them at `fine_tuning`, (3) the operator uses `radio` to fix what needs fixing and edits `05_qa.md` to record what they did, (4) the operator ticks the checkbox, (5) the cleanup session — which already runs build, lint, and tests — serves as the re-verification pass.
+
+There is no re-run-QA loop, and no CLI affordance for moving a task backwards through the pipeline. `--retry` is not one: it only widens `drive`'s eligibility filter to tasks already sitting in `error` (`src/cli/drive.ts`), and nothing in the codebase walks `STAGE_ORDER` in reverse. Building a reverse-stage command is out of scope for this task.
+
+If the operator wants a fresh QA opinion after substantial fixes, they edit `stage:` in `state.yml` back to `ai_qa` by hand and run `drive` again. This remains legitimate after Workstream A: the new guard rule denies *agent* writes to `state.yml`, but the file is still the operator's to edit. Document it as a power-user escape hatch in `docs/pipeline.md`, not as part of the normal flow.
 
 ---
 
@@ -76,4 +84,4 @@ At `fine_tuning`, update the persona to a **Senior QA Engineer** who has read `0
 
 # Complete
 
-- [ ] Ready to advance to Product Review
+- [x] Ready to advance to Product Review
