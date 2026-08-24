@@ -9,6 +9,7 @@ export const configSchema = z.object({
   context: z
     .array(z.string())
     .default(["README.md", "CLAUDE.md"]),
+  skills: z.record(z.string(), z.array(z.string())).optional(),
 });
 
 export type VibeRacerConfig = z.infer<typeof configSchema>;

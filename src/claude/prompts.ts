@@ -1,3 +1,4 @@
+import type { SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import type { TaskContext } from "../pipeline/types.js";
 import type { Stage } from "../state/schema.js";
 
@@ -26,6 +27,21 @@ export const PERSONAS = {
     "When executing, you follow the plan precisely and commit working code.",
   ].join(" "),
 } as const;
+
+export function buildSkillsSection(skills: SlashCommand[]): string {
+  if (skills.length === 0) return "";
+  const lines = skills.map((s) => `- **${s.name}**: ${s.description ?? "No description"}`);
+  return [
+    "",
+    "## Available Engineering Skills",
+    "",
+    "You have access to the following engineering skills via the `Skill` tool:",
+    "",
+    ...lines,
+    "",
+    "Use these skills when they are relevant to your work in this lap.",
+  ].join("\n");
+}
 
 export const MAX_QUESTIONS_PER_ROUND = 6;
 export const MAX_QUESTION_ROUNDS = 3;

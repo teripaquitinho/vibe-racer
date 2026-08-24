@@ -18,6 +18,11 @@ vi.mock("../../src/utils/logger.js", () => ({
   },
 }));
 
+vi.mock("../../src/config/loader.js", () => ({
+  loadConfig: () => ({ plans_dir: "plans", context: ["README.md", "CLAUDE.md"] }),
+  findProjectRoot: () => "/tmp/repo",
+}));
+
 describe("runAndStream", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -55,7 +60,7 @@ describe("runAndStream", () => {
           preset: "claude_code",
           append: "You are an expert.",
         },
-        settingSources: ["project"],
+        settingSources: ["project", "user"],
         allowedTools: ["Read", "Write"],
         maxTurns: 10,
         includePartialMessages: true,
@@ -111,6 +116,32 @@ describe("runAndStream", () => {
     const result = await runAndStream(baseOptions);
 
     expect(result).toBe("final output");
+  });
+
+  it("does not spawn a probe query for a stage whose lap has no skills", async () => {
+    async function* fakeStream() {
+      yield {
+        type: "result" as const,
+        result: "done",
+        num_turns: 1,
+        total_cost_usd: 0.01,
+      };
+    }
+    mockQuery.mockReturnValue(fakeStream());
+
+    const { runAndStream } = await import("../../src/claude/session.js");
+
+    const callCountBefore = mockQuery.mock.calls.length;
+    // ai_objective_review maps to lap "objective" which has DEFAULT_SKILLS = []
+    await runAndStream({
+      ...baseOptions,
+      stage: "ai_objective_review",
+      taskPlanPath: "plans/0001_test",
+      plansDir: "plans",
+    });
+
+    // query should be called exactly once more (the real session), not twice (probe + session)
+    expect(mockQuery.mock.calls.length - callCountBefore).toBe(1);
   });
 
   it("ignores non-text-delta stream events", async () => {
