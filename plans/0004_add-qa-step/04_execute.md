@@ -64,7 +64,7 @@ For each milestone:
 | M2 | Trivial Fast-Path Re-Plumb | `done` | | |
 | M3 | Guard Hardening + Error Recovery | `done` | | |
 | M4 | Skills Module | `done` | | |
-| M5a | QA Handler + Execute Rewiring | `pending` | | AC2 fixture result goes here |
+| M5a | QA Handler + Execute Rewiring | `done` | | AC2 fixture created at tests/fixtures/incomplete-task/; verify-ac2.mjs at scripts/verify-ac2.mjs. Fixture seeds an undocumented `multiply()` export — QA must name the missing JSDoc. |
 | M5b | Decision Stage + Checklist Enforcement | `pending` | | |
 | M6 | Docs + Cleanup | `pending` | | |
 

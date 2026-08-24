@@ -4,6 +4,7 @@ import { handleProductReview } from "./handlers/product-review.js";
 import { handleDesignReview } from "./handlers/design-review.js";
 import { handlePlanReview } from "./handlers/plan-review.js";
 import { handleExecute } from "./handlers/execute.js";
+import { handleQa } from "./handlers/qa.js";
 import { handleDone } from "./handlers/done.js";
 import { withErrorHandling } from "./handlers/safe-wrapper.js";
 
@@ -15,6 +16,7 @@ const HANDLERS: Record<string, HandlerFn> = {
   ai_design_review: withErrorHandling("ai_design_review", handleDesignReview),
   ai_plan_review: withErrorHandling("ai_plan_review", handlePlanReview),
   ready_to_execute: withErrorHandling("ready_to_execute", handleExecute),
+  ai_qa: withErrorHandling("ai_qa", handleQa),
   cleanup_ready: withErrorHandling("cleanup_ready", handleDone),
 };
 

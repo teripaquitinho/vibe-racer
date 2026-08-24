@@ -99,6 +99,7 @@ describe("STAGE_QUESTIONS_FILE", () => {
     expect(STAGE_QUESTIONS_FILE.need_design).toBe("02_design_questions.md");
     expect(STAGE_QUESTIONS_FILE.need_plan).toBe("03_plan_questions.md");
     expect(STAGE_QUESTIONS_FILE.need_execution).toBe("04_execute.md");
-    expect(STAGE_QUESTIONS_FILE.fine_tuning).toBe("04_execute.md");
+    expect(STAGE_QUESTIONS_FILE.fine_tuning).toBe("05_qa.md");
+    expect(STAGE_QUESTIONS_FILE.need_decision).toBe("06_decision.md");
   });
 });

@@ -38,7 +38,7 @@ export const STAGE_QUESTIONS_FILE: Partial<Record<Stage, string>> = {
   need_design: "02_design_questions.md",
   need_plan: "03_plan_questions.md",
   need_execution: "04_execute.md",
-  fine_tuning: "04_execute.md",
+  fine_tuning: "05_qa.md",
   need_decision: "06_decision.md",
 };
 

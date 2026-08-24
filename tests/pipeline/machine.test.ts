@@ -17,6 +17,9 @@ vi.mock("../../src/pipeline/handlers/plan-review.js", () => ({
 vi.mock("../../src/pipeline/handlers/execute.js", () => ({
   handleExecute: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("../../src/pipeline/handlers/qa.js", () => ({
+  handleQa: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("../../src/pipeline/handlers/done.js", () => ({
   handleDone: vi.fn().mockResolvedValue(undefined),
 }));
@@ -63,6 +66,12 @@ describe("dispatch", () => {
     expect(mod.handleExecute).toHaveBeenCalledWith(CTX);
   });
 
+  it("routes ai_qa to qa handler", async () => {
+    const mod = await import("../../src/pipeline/handlers/qa.js");
+    await dispatch("ai_qa", CTX);
+    expect(mod.handleQa).toHaveBeenCalledWith(CTX);
+  });
+
   it("routes cleanup_ready to done handler", async () => {
     const mod = await import("../../src/pipeline/handlers/done.js");
     await dispatch("cleanup_ready", CTX);
@@ -89,6 +98,7 @@ describe("dispatch — handler coverage", () => {
     await expect(dispatch("ai_design_review", CTX)).resolves.toBeUndefined();
     await expect(dispatch("ai_plan_review", CTX)).resolves.toBeUndefined();
     await expect(dispatch("ready_to_execute", CTX)).resolves.toBeUndefined();
+    await expect(dispatch("ai_qa", CTX)).resolves.toBeUndefined();
     await expect(dispatch("cleanup_ready", CTX)).resolves.toBeUndefined();
   });
 
