@@ -66,7 +66,7 @@ For each milestone:
 | M4 | Skills Module | `done` | | |
 | M5a | QA Handler + Execute Rewiring | `done` | | AC2 fixture created at tests/fixtures/incomplete-task/; verify-ac2.mjs at scripts/verify-ac2.mjs. Fixture seeds an undocumented `multiply()` export — QA must name the missing JSDoc. |
 | M5b | Decision Stage + Checklist Enforcement | `done` | | |
-| M6 | Docs + Cleanup | `pending` | | |
+| M6 | Docs + Cleanup | `in_progress` | | |
 
 ---
 
