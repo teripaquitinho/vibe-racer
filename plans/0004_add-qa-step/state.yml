@@ -1,6 +1,6 @@
-stage: need_plan
+stage: need_execution
 title: Add QA step
 created: 2026-08-24T00:00:00.000Z
-updated: 2026-08-24T09:42:11.262Z
-prev: ai_design_review
-next: ai_plan_review
+updated: 2026-08-24T10:06:35.454Z
+prev: ai_plan_review
+next: ready_to_execute

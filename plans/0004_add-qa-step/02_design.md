@@ -146,10 +146,10 @@ const STAGES = [
 STAGE_QUESTIONS_FILE["fine_tuning"] = "05_qa.md";       // CHANGED from 04_execute.md
 STAGE_QUESTIONS_FILE["need_decision"] = "06_decision.md"; // NEW
 
-// STAGE_NEXT_NAME — human-readable next stage for checkbox text
-STAGE_NEXT_NAME["ai_qa"] = "QA";                    // for display
+// STAGE_NEXT_NAME — human-readable next stage for checkbox text.
+// Only read by drive.ts when hinting at HUMAN stages, so agent-stage
+// entries would be inert. Add the one that is actually reachable.
 STAGE_NEXT_NAME["fine_tuning"] = "Cleanup";          // unchanged
-STAGE_NEXT_NAME["cleanup_ready"] = "Decision";       // for display
 STAGE_NEXT_NAME["need_decision"] = "Done";           // NEW
 
 // AGENT_STAGES — add ai_qa
@@ -193,13 +193,20 @@ After:
 
 ### New Rule 0: Deny Agent Writes to `state.yml`
 
-Inserted **before** all existing rules:
+Inserted **before** all existing rules, after path resolution:
 
 ```
-Rule 0: if tool is Write/Edit && target path matches */state.yml → deny + audit log
+Rule 0: if Write/Edit
+        && basename(resolved) === "state.yml"
+        && resolved is inside <cwd>/<plans_dir>/
+        → deny + audit log
 ```
 
 Applies at every stage — review, execution, QA, cleanup. This is the load-bearing fix for the corruption bug.
+
+**Scope it to the plans directory.** Matching on basename alone would deny writes to any file named `state.yml` anywhere in the project, at every stage including execution — so a host project that happens to keep its own `state.yml` could not have it written by the execute lap. The file this rule protects is the pipeline-owned one under `plans_dir`; nothing outside that tree is the pipeline's business.
+
+This means the guard needs `plans_dir` in `GuardOptions`. `taskPlanPath` is already passed in and is `<plans_dir>/NNNN_slug`, so the plans root can be derived from it — but pass it explicitly rather than inferring by string surgery.
 
 ### Explicit `Skill` Allow
 
@@ -330,16 +337,33 @@ After:  settingSources: ["project", "user"]
 
 This makes account-level skills resolvable. The `"user"` source includes `~/.claude/settings.json` where account skills resolve from.
 
-**Skill discovery flow in `runAndStream`:**
+**Skill discovery in `runAndStream` — the ordering constraint:**
+
+`supportedCommands()` is declared on `Query` (`sdk.d.ts`: `interface Query extends AsyncGenerator<SDKMessage, void>`), which is the object `query()` *returns*. The prompt and `allowedTools` are *inputs* to `query()`. So skills cannot be discovered before building the session whose prompt lists them: the naive "discover, then build the prompt from the result" flow is circular. `runAndStream` also discards the Query object today (`for await (const message of query({...}))`), so it must retain the reference regardless.
+
+Resolve it with a **probe query**: one short-lived `query()` whose only purpose is enumeration, closed before the real session opens.
 
 ```
-1. Resolve lap's skills: resolveSkills(lap, config)
-2. If skills requested: call supportedCommands() on query object
-3. Partition: partitionSkills(requested, installed)
-4. Log warnings for missing skills (one line per missing skill)
-5. Pass available skills to prompt builder
-6. Add "Skill" to allowedTools
+runAndStream(options)
+  1. requested = resolveSkills(lap, config)
+  2. if requested.length === 0 → skip to step 7   (no probe, no cost)
+  3. probe = query({ prompt: "", options: { cwd, settingSources, maxTurns: 0 } })
+  4. installed = await probe.supportedCommands()
+  5. await probe.return()                 // close before the real session opens
+  6. { available, missing } = partitionSkills(requested, installed)
+     log one warning line naming missing[]
+  7. build system prompt, appending buildSkillsSection(available) when non-empty
+  8. query({ prompt, options: { allowedTools: [...tools, "Skill"], canUseTool, ... } })
 ```
+
+The probe costs one extra process spawn per lap, and only when the lap requests skills — a lap with an empty skill list never pays it.
+
+**This must be verified empirically before milestone 4 begins.** `supportedCommands()` may require an initialized session rather than a freshly constructed query, in which case the probe returns nothing useful. Two fallbacks, in order of preference:
+
+- **Streaming input mode.** Create the query first, call `supportedCommands()`, then push the real prompt as the first user message. No extra spawn, and pre-validation survives — but it restructures `runAndStream` from a single `query({ prompt })` call into a streaming-input session.
+- **Skip pre-validation.** Always pass `Skill` in `allowedTools`, list the configured names in the prompt, and let an unknown skill fail at invocation. The lap still completes, but AC7's warn-at-load is forfeited and degradation becomes silent.
+
+Prefer the streaming-input fallback over the silent one: AC7 requires a warning, not just survival.
 
 A lap with zero available skills runs on its persona alone — identical to current behavior.
 
@@ -449,51 +473,58 @@ function withErrorHandling(
 
 **Fix:**
 
+**`store.ts` stays synchronous.** It uses `readFileSync`/`writeFileSync` throughout, and `discovery.ts` calls `readState` inside the loop that builds `Task[]`. Making these async would change `discoverTasks`'s signature and cascade into `pitwall.ts`, `drive.ts`, `radio.ts`, and `task-select.ts` — a large refactor with no benefit. Keep every signature in this module sync.
+
+**Preserve `trivial`.** The salvage path must carry the `trivial` flag, not just `title`/`created`. A trivial task that errors and loses the flag is treated as non-trivial on `--retry`, and the prompts then reference `01_product.md` and `02_design.md`, which a trivial task never produced.
+
 ```typescript
-async function setError(
+function setError(
   planPath: string,
   errorStage: string,
   message: string
-): Promise<void> {
-  let title = "unknown";
-  let created: string | undefined;
+): void {
+  let salvaged: Partial<TaskState> = {};
 
   try {
-    const state = await readState(planPath);
-    title = state.title;
-    created = state.created;
+    salvaged = readState(planPath);
   } catch {
-    // Salvage what we can from raw YAML
+    // state.yml is unparseable — which may well be why we are here.
+    // Recover what we can from the raw YAML rather than throwing.
     try {
-      const raw = readFileSync(stateFilePath, "utf-8");
-      const parsed = yaml.parse(raw);
-      if (typeof parsed?.title === "string") title = parsed.title;
-      if (typeof parsed?.created === "string") created = parsed.created;
+      const parsed = parse(readFileSync(path.join(planPath, STATE_FILE), "utf-8"));
+      if (typeof parsed?.title === "string") salvaged.title = parsed.title;
+      if (typeof parsed?.created === "string") salvaged.created = parsed.created;
+      if (typeof parsed?.trivial === "boolean") salvaged.trivial = parsed.trivial;
     } catch {
-      // Give up salvaging — write with defaults
+      // Give up salvaging — write a valid error record with defaults.
     }
   }
 
-  await writeState(planPath, {
+  writeState(planPath, {
+    ...salvaged,
     stage: "error",
-    title,
-    created,
+    title: salvaged.title ?? basename(planPath),
     error_stage: errorStage,
     error_message: message,
   });
 }
 ```
 
+Spreading `salvaged` preserves `trivial` on the happy path too, matching today's `{ ...state }` behavior.
+
 ### Validate on Write (`src/state/store.ts`)
 
 `writeState` validates the state object against the Zod schema before serializing:
 
 ```typescript
-async function writeState(planPath: string, state: TaskState): Promise<void> {
-  const validated = taskStateSchema.parse(state); // throws if invalid
-  // ... compute prev/next, serialize YAML, write file
+function writeState(planPath: string, state: TaskState): void {
+  // ... compute prev/next as today
+  const updated = stateSchema.parse({ ...state, prev, next, updated: new Date().toISOString() });
+  writeFileSync(filePath, stringify(updated), "utf-8");
 }
 ```
+
+Validate the fully-computed object, not the input — `prev`/`next`/`updated` are added by this function, so parsing before they exist would check the wrong shape. Sync, like the rest of the module.
 
 This surfaces bad state at the write that caused it rather than at the next read. Diagnostic hardening — does not prevent the corruption incident on its own but limits blast radius.
 
@@ -607,12 +638,18 @@ on whether an item can be waived. I have full context of the plan directory."
 
 `src/config/schema.ts`:
 
+`skills` is the only addition. **Do not touch `repo`** — it currently uses a `.refine()` enforcing a GitHub URL and deliberately accepting SSH form (`git@github.com:owner/repo`). Replacing it with `z.string().url()` would drop the GitHub check and reject every SSH remote.
+
 ```typescript
-const vibeRacerConfigSchema = z.object({
-  repo: z.string().url().optional(),
-  plans_dir: z.string().default("plans"),
-  context: z.array(z.string()).default(["README.md", "CLAUDE.md"]),
-  skills: z.record(z.string(), z.array(z.string())).optional(),
+export const configSchema = z.object({
+  repo: z.string().refine(
+    (val) => /github\.com[/:]([^/]+)\/([^/.]+)/.test(val),
+    "repo must be a GitHub URL (HTTPS or SSH)",
+  ).optional(),                                    // UNCHANGED
+  plans_dir: z.string().default("plans"),          // UNCHANGED
+  context: z.array(z.string())
+    .default(["README.md", "CLAUDE.md"]),          // UNCHANGED
+  skills: z.record(z.string(), z.array(z.string())).optional(),  // NEW
   // keys are lap names: objective, product, design, plan, execute, qa, decision
   // values are arrays of skill names
 });
@@ -678,18 +715,22 @@ operator deploys, works checklist, ticks items + final checkbox
 ```
 session.ts: runAndStream(options)
   1. resolveSkills(lap, config)        → string[] of requested skill names
-  2. query.supportedCommands()         → SlashCommand[] of installed skills
-  3. partitionSkills(requested, inst)  → { available, missing }
-  4. log warnings for missing[]
-  5. buildSkillsSection(available)     → prompt appendix
-  6. "Skill" added to allowedTools
+  2. if empty → skip discovery entirely (no probe spawned)
+  3. probe query → supportedCommands()  → SlashCommand[] of installed skills
+  4. close probe
+  5. partitionSkills(requested, inst)  → { available, missing }
+  6. log one warning line for missing[]
+  7. buildSkillsSection(available)     → prompt appendix
+  8. real query: "Skill" added to allowedTools
 ```
+
+Steps 3–4 exist because `supportedCommands()` lives on the returned `Query`, not on the options passed in. See Skills Integration for the constraint and its fallbacks.
 
 ### Guard Evaluation Order
 
 ```
 canUseTool(toolName, input)
-  Rule 0: Write/Edit targeting */state.yml         → DENY + audit
+  Rule 0: Write/Edit on <plans_dir>/**/state.yml   → DENY + audit
   Rule 1: Sensitive path blocklist                 → DENY + audit
   Rule 2: Path containment (cwd + /tmp)            → DENY + audit
   Rule 3: .env protection                          → DENY + audit
