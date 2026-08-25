@@ -6,9 +6,14 @@
  * Builds a throwaway git repo from the incomplete-task fixture, calls handleQa,
  * and checks whether 05_qa.md names the seeded gap (missing JSDoc on multiply()).
  *
- * Usage: node scripts/verify-ac2.mjs
+ * Usage: npx tsx scripts/verify-ac2.mjs
  *
- * Prerequisites: npm run build (uses dist/ imports)
+ * Must be run under tsx. handleQa is bundled into dist/index.js without being re-exported,
+ * so there is nothing to import from the built output — the script imports the TS source.
+ *
+ * This runs a real Claude Code session against a throwaway repo, so it costs tokens and
+ * needs ANTHROPIC_API_KEY (or `claude login`). It exits non-zero on any failure, including
+ * failing to run at all.
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
@@ -91,37 +96,19 @@ next: fine_tuning
   // 5. Build TaskContext and call handleQa
   console.log("\nRunning handleQa against the fixture...\n");
 
-  const { handleQa } = await import("../dist/index.js").then(async () => {
-    // handleQa is not exported from index, import from the built handler
-    return import("../dist/index.js");
-  }).catch(() => null) || {};
-
-  // Since handleQa may not be directly importable from dist, use a dynamic approach
-  // Build the project first, then import
-  let handleQaFn;
+  let handleQa;
   try {
-    // Try importing from the built output
-    const mod = await import("../dist/index.js");
-    // The handler is likely not re-exported from index. Try a direct path approach.
-    // Since tsup bundles everything into index.js, we need to use the CLI's internal imports
-    handleQaFn = mod.handleQa;
-  } catch {
-    // Fallback: not available
-  }
-
-  if (!handleQaFn) {
-    console.log("handleQa is not directly importable from dist/index.js.");
-    console.log("This script should be run via tsx for source imports:");
-    console.log("");
-    console.log("  npx tsx scripts/verify-ac2.mjs");
-    console.log("");
-    console.log("Or verify manually:");
-    console.log(`  1. cd ${tmp}`);
-    console.log("  2. Run: npm run dev -- drive");
-    console.log("  3. Check plans/0001_fixture/05_qa.md for the missing JSDoc finding");
-    console.log("");
-    console.log("Fixture directory preserved at:", tmp);
-    process.exit(0);
+    ({ handleQa } = await import("../src/pipeline/handlers/qa.ts"));
+  } catch (err) {
+    // Exiting 0 here would report a pass for a verification that never ran.
+    console.error("FAIL: could not import handleQa from source.");
+    console.error("Run this script under tsx so TypeScript sources resolve:");
+    console.error("");
+    console.error("  npx tsx scripts/verify-ac2.mjs");
+    console.error("");
+    console.error("Import error:", err.message);
+    console.error("Fixture directory preserved at:", tmp);
+    process.exit(1);
   }
 
   const ctx = {
@@ -136,7 +123,7 @@ next: fine_tuning
   };
 
   try {
-    await handleQaFn(ctx);
+    await handleQa(ctx);
   } catch (err) {
     console.error("handleQa threw:", err.message);
     console.log("\nFixture directory preserved at:", tmp);

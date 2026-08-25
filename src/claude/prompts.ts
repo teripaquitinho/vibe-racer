@@ -648,6 +648,8 @@ Do NOT include boilerplate items. Every item must be specific to this task.
 
 If the plan documents accepted residual risks, each must appear as a named item
 in the checklist so the operator signs off on them knowingly.
+
+Do NOT add a "# Complete" section or a "Ready to advance" checkbox — the pipeline appends it.
 `.trim();
 
   return { prompt, persona: PERSONAS.releaseManager };
@@ -657,12 +659,6 @@ export function qaPrompt(ctx: TaskContext): {
   prompt: string;
   persona: string;
 } {
-  // Load vibe-racer-fix.md while it still exists (deleted in M6)
-  const fixFileRef = `
-If the file \`vibe-racer-fix.md\` exists in the project root, read it — it documents the three fixes
-Workstream A implemented. Verify those fixes against their source spec.
-`.trim();
-
   const prompt = `
 You are a Senior QA Engineer reviewing task #${ctx.taskNumber}: "${ctx.title}".
 
@@ -689,8 +685,6 @@ Read these files for full context:
 - \`${ctx.planPath}/03_plan.md\` — acceptance criteria and implementation plan
 - \`${ctx.planPath}/04_execute.md\` — what was claimed done
 
-${fixFileRef}
-
 ## Required Sections in 05_qa.md
 You MUST produce ALL of the following sections. No section may be omitted.
 
@@ -709,6 +703,7 @@ You MUST produce ALL of the following sections. No section may be omitted.
 - Every claim (positive or negative) MUST include the command run and output.
 - Do NOT fix any issues you find. You are judging, not fixing.
 - Do NOT write files outside the plan directory.
+- Do NOT add a "# Complete" section or a "Ready to advance" checkbox — the pipeline appends it.
 - Write your report to \`${ctx.planPath}/05_qa.md\`.
 `.trim();
 

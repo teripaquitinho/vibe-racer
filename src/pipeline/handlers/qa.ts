@@ -1,11 +1,11 @@
 import path from "path";
-import { existsSync, appendFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { qaPrompt } from "../../claude/prompts.js";
 import { commitAll, createGit } from "../../git/operations.js";
 import { updateStage } from "../../state/store.js";
-import { completionSection } from "../validation.js";
+import { ensureCompletionSection } from "../validation.js";
 import { log } from "../../utils/logger.js";
 
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Bash"];
@@ -33,7 +33,7 @@ export async function handleQa(ctx: TaskContext): Promise<void> {
     throw new Error("QA session did not produce 05_qa.md");
   }
 
-  appendFileSync(qaPath, completionSection("Cleanup"), "utf-8");
+  ensureCompletionSection(qaPath, "Cleanup");
 
   updateStage(ctx.planPath, "fine_tuning");
 

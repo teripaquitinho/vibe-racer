@@ -24,7 +24,7 @@ export function createProgram(): Command {
 
   program
     .name("vibe-racer")
-    .description("Your AI race engineer — five laps from objective to shipped code")
+    .description("Your AI race engineer — seven laps from objective to shipped code")
     .version("0.2.0");
 
   program

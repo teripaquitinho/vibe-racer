@@ -6,6 +6,7 @@ import {
   validateAnswers,
   hasCompletionMarker,
   removeCompletionMarker,
+  ensureCompletionSection,
   countFollowUpRounds,
   validateDecisionChecklist,
 } from "../../src/pipeline/validation.js";
@@ -197,6 +198,57 @@ describe("removeCompletionMarker", () => {
     expect(content).toContain("- [ ] Ready to advance to Product Review");
     expect(content).not.toContain("[x]");
     expect(content).toContain("Answer text");
+  });
+
+  it("unchecks every marker when a file ended up with more than one", () => {
+    const file = path.join(tmpDir, "test.md");
+    writeFileSync(
+      file,
+      "Report\n\n# Complete\n\n- [x] Ready to advance to Cleanup\n\n# Complete\n\n- [x] Ready to advance to Cleanup\n",
+      "utf-8",
+    );
+    removeCompletionMarker(file);
+    expect(readFileSync(file, "utf-8")).not.toContain("[x]");
+  });
+});
+
+describe("ensureCompletionSection", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "jugg-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("appends the section when the file has none", () => {
+    const file = path.join(tmpDir, "05_qa.md");
+    writeFileSync(file, "# QA Report\n\nFindings.\n", "utf-8");
+    expect(ensureCompletionSection(file, "Cleanup")).toBe(true);
+    const content = readFileSync(file, "utf-8");
+    expect(content).toContain("- [ ] Ready to advance to Cleanup");
+    expect(content.match(/^# Complete$/gm)).toHaveLength(1);
+  });
+
+  it("does not append a second section when the agent wrote its own", () => {
+    const file = path.join(tmpDir, "05_qa.md");
+    writeFileSync(
+      file,
+      "# QA Report\n\nFindings.\n\n# Complete\n\n- [ ] Ready to advance to Cleanup\n",
+      "utf-8",
+    );
+    expect(ensureCompletionSection(file, "Cleanup")).toBe(false);
+    const content = readFileSync(file, "utf-8");
+    expect(content.match(/Ready to advance/g)).toHaveLength(1);
+  });
+
+  it("treats an already-ticked marker as present", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(file, "- [x] Ready to advance to Done\n", "utf-8");
+    expect(ensureCompletionSection(file, "Done")).toBe(false);
+    expect(readFileSync(file, "utf-8").match(/Ready to advance/g)).toHaveLength(1);
   });
 });
 

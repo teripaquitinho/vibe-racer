@@ -77,11 +77,16 @@ Open the questions file. Read each answer. Edit only what you disagree with. The
 vibe-racer drive
 ```
 
-Repeat this cycle through all 5 laps:
+Repeat this cycle through all 7 laps:
 
 ```
-Lap 1: Objective -> Lap 2: Product -> Lap 3: Design -> Lap 4: Plan -> Lap 5: Execute
+Lap 1: Objective -> Lap 2: Product -> Lap 3: Design -> Lap 4: Plan ->
+Lap 5: Execute -> Lap 6: QA -> Lap 7: Decision
 ```
+
+The last two laps run after the code is written: the race engineer QAs its own work in
+`05_qa.md`, and then writes a post-deploy checklist in `06_decision.md` that you must work
+through before the task can reach `done`.
 
 ### 6. Check the pit wall
 
@@ -100,6 +105,8 @@ vibe-racer pitwall
 | Design | Review/edit pre-filled answers | Writes design spec, asks plan questions |
 | Plan | Review/edit pre-filled answers | Writes implementation plan + execution playbook |
 | Execute | Review the plan, tick the checkbox | Implements code milestone by milestone |
+| QA | Act on the findings, tick the checkbox | Reviews its own work, writes the QA report |
+| Decision | Work the post-deploy checklist | Cleans up, writes the decision checklist |
 
 ## Tips
 
@@ -107,3 +114,4 @@ vibe-racer pitwall
 - **If the race engineer needs more info**, it will radio back with follow-up questions and uncheck the checkbox. Answer them and re-tick.
 - **Small tasks?** The race engineer can flag them as trivial during objective review, skipping product and design laps.
 - **Need to discuss?** Use `vibe-racer radio` to open an interactive session with the race engineer at a pit stop.
+- **The decision checklist is enforced** -- at the final pit stop, every `- [ ]` in `06_decision.md` must be ticked. `drive` prints the unworked lines and refuses to finish the task until they are.

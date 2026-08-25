@@ -441,9 +441,14 @@ describe("qaPrompt", () => {
     expect(prompt).toContain("Do NOT fix any issues you find");
   });
 
-  it("references vibe-racer-fix.md", () => {
+  it("does not reference the deleted vibe-racer-fix.md handoff note", () => {
     const { prompt } = qaPrompt(CTX);
-    expect(prompt).toContain("vibe-racer-fix.md");
+    expect(prompt).not.toContain("vibe-racer-fix.md");
+  });
+
+  it("forbids authoring the completion section", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("Do NOT add a \"# Complete\" section");
   });
 
   it("includes diff fallback clause", () => {
@@ -462,6 +467,11 @@ describe("decisionPrompt", () => {
     const { prompt } = decisionPrompt(CTX);
     expect(prompt).toContain("flat, top-level");
     expect(prompt).toContain("- [ ]");
+  });
+
+  it("forbids authoring the completion section", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("Do NOT add a \"# Complete\" section");
   });
 
   it("references context files: objective, plan, qa", () => {

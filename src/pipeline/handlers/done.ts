@@ -1,11 +1,11 @@
 import path from "path";
-import { existsSync, appendFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { donePrompt, decisionPrompt } from "../../claude/prompts.js";
 import { commitAll, createGit } from "../../git/operations.js";
 import { updateStage } from "../../state/store.js";
-import { completionSection } from "../validation.js";
+import { ensureCompletionSection } from "../validation.js";
 import { log } from "../../utils/logger.js";
 
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Edit", "Bash"];
@@ -47,7 +47,7 @@ export async function handleDone(ctx: TaskContext): Promise<void> {
     throw new Error("Decision session did not produce 06_decision.md");
   }
 
-  appendFileSync(decisionPath, completionSection("Done"), "utf-8");
+  ensureCompletionSection(decisionPath, "Done");
 
   updateStage(ctx.planPath, "need_decision");
   log.success("Stage advanced to [need_decision]");

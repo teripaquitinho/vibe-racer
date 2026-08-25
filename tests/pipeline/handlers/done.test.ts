@@ -5,7 +5,7 @@ const mockRunAndStream = vi.fn().mockResolvedValue(undefined);
 const mockCommitAll = vi.fn().mockResolvedValue("done123");
 const mockUpdateStage = vi.fn();
 const mockExistsSync = vi.fn();
-const mockAppendFileSync = vi.fn();
+const mockEnsureCompletionSection = vi.fn().mockReturnValue(true);
 
 vi.mock("../../../src/claude/session.js", () => ({
   runAndStream: (...args: unknown[]) => mockRunAndStream(...args),
@@ -27,11 +27,10 @@ vi.mock("../../../src/state/store.js", () => ({
 
 vi.mock("node:fs", () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
-  appendFileSync: (...args: unknown[]) => mockAppendFileSync(...args),
 }));
 
 vi.mock("../../../src/pipeline/validation.js", () => ({
-  completionSection: (name: string) => `\n# Complete\n\n- [ ] Ready to advance to ${name}\n`,
+  ensureCompletionSection: (...args: unknown[]) => mockEnsureCompletionSection(...args),
 }));
 
 vi.mock("../../../src/utils/logger.js", () => ({
@@ -119,10 +118,9 @@ describe("handleDone", () => {
     const { handleDone } = await import("../../../src/pipeline/handlers/done.js");
     await handleDone(CTX);
 
-    expect(mockAppendFileSync).toHaveBeenCalledWith(
+    expect(mockEnsureCompletionSection).toHaveBeenCalledWith(
       expect.stringContaining("06_decision.md"),
-      expect.stringContaining("Ready to advance to Done"),
-      "utf-8",
+      "Done",
     );
   });
 });
