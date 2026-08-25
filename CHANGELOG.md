@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Trivial fast-path is detected by file presence (objective review writes `03_plan_questions.md` instead of `01_product_questions.md`) rather than by the agent writing `trivial: true` into `state.yml`
 - `setError` survives an unparseable `state.yml`: it salvages `title`/`created`/`trivial` from the raw YAML, and falls back to hand-writing a minimal valid error record. Previously the recovery path died on the same corrupt file it was recording
 - Sessions load `settingSources: ["project", "user"]` so project- and user-scope skills resolve. This widens the trust boundary — documented in `docs/security.md`
+- `writeState` is exported from `state/store` again. 0.2.0 un-exported it as an internal symbol; the trivial fast-path re-plumb needs it, so this is a deliberate reversal
+- `SecretDetectedError` is exported from `git/operations` and rethrown rather than swallowed. A secret detected while committing partial work now aborts before `setError` records the stage, instead of being buried in the error path
 
 ### Fixed
 

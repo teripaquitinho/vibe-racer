@@ -91,6 +91,8 @@ vibe-racer drive --retry
 
 If multiple tasks are actionable, prompts you to choose.
 
+**After execution:** the last milestone does not end the task. `drive` advances it to `ai_qa` and prints a hint — run `drive` again to start the QA lap, which writes `05_qa.md`.
+
 **`--retry`:** when a session fails, the task moves to `error` and the stage it failed at is
 recorded in `error_stage`. `--retry` reads that field, restores the task to that stage, and
 dispatches its handler once. If `error_stage` holds something the current version doesn't

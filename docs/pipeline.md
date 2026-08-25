@@ -119,6 +119,8 @@ The QA session judges, it does not fix. It is write-jailed to the plan folder an
 
 Read `05_qa.md`. Fix what needs fixing, accept what you're willing to accept. Tick `- [x] Ready to advance to Cleanup` in `05_qa.md` when the report no longer blocks you.
 
+**Re-running QA after fixes.** If you fixed enough that the report is stale, you can race the QA lap again: set `stage: ai_qa` in `state.yml` by hand and run `drive`. Rule 0 denies `state.yml` to the *agent*, but it remains the operator's file — this is a supported escape hatch, not a workaround. The next QA session overwrites `05_qa.md` against the current diff.
+
 ---
 
 ## Lap 7: Decision

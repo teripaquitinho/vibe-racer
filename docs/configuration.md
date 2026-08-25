@@ -87,13 +87,26 @@ Skills are resolved from Claude Code itself, not from vibe-racer. Sessions load 
 - **User skills** -- `~/.claude/skills/`, available in every project
 - **Bundled skills** -- whatever ships with your installed Claude Code
 
-vibe-racer probes the installed skill list once per session and reconciles it with the
+| Source | Reachable? | Notes |
+|---|---|---|
+| Bundled Claude Code skills | always | the only safe basis for the built-in defaults |
+| `~/.claude/skills/<name>/SKILL.md` | yes, via `user` scope | the practical way to add your own |
+| `<your-project>/.claude/skills/` | yes, via `project` scope | per-project, ships with the repo |
+| User-scope plugins (`enabledPlugins`) | yes, if the plugin ships a `skills/` directory | many official plugins ship commands and agents only |
+| claude.ai account / org skill catalogues | **no** | Server-side, scoped to a Claude.ai workspace, and reachable from claude.ai, Cowork, and Tag -- not from the CLI or Agent SDK. There is nothing to install locally. To use an equivalent here, re-author it as a local skill under `~/.claude/skills/`. |
+
+vibe-racer probes the session's available commands once and reconciles them with the
 requested names:
 
-- A name that isn't installed is **skipped with a warning** -- the lap still runs.
-- A name that resolves to more than one skill (a project skill shadowing a bundled one) is
+- A name that isn't found is **skipped with a warning** -- the lap still runs.
+- A name that resolves to more than one entry (a project skill shadowing a bundled one) is
   reported as **ambiguous**, so a silent shadow doesn't change behaviour unnoticed.
 - If the probe itself fails, the lap **degrades to persona-only** rather than failing.
+
+The probe returns *every* slash command available to the session, not only skills -- harness
+commands such as `compact` and `cost` are in that list too. A mistyped name that happens to
+collide with one of them resolves silently instead of warning you, so verify a new entry
+actually did something on its first lap.
 
 Loading user-scope settings widens the trust boundary — see [Security](/security#setting-sources).
 
