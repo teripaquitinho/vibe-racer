@@ -142,7 +142,11 @@ Work through `06_decision.md` and tick every item. This gate is enforced: if any
 
 ### Done (`done`)
 
-Terminal state. Merge the branch manually when ready.
+Terminal state. Ticking the last checkbox advances the task and makes a final commit on the
+task branch (`vibe-racer: task #N complete`) — this is the one that captures your worked
+checklist and the `stage: done` write, since no lap follows to sweep them up.
+
+Merge the branch manually when ready. vibe-racer never pushes.
 
 ---
 

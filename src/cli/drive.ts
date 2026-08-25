@@ -5,13 +5,36 @@ import { discoverTasks } from "../state/discovery.js";
 import { tryAdvance } from "../state/advancement.js";
 import { readState, updateStage } from "../state/store.js";
 import { isAgentStage, isHumanStage, STAGE_QUESTIONS_FILE, STAGE_NEXT_NAME } from "../pipeline/states.js";
-import { createGit, checkoutBranch } from "../git/operations.js";
+import { createGit, checkoutBranch, commitAll, SecretDetectedError } from "../git/operations.js";
 import { taskBranchName, taskPlanFolder } from "../git/slug.js";
 import { dispatch } from "../pipeline/machine.js";
 import type { TaskContext } from "../pipeline/types.js";
 import { log } from "../utils/logger.js";
 import { selectTask } from "./task-select.js";
 import { STAGES, type Stage } from "../state/schema.js";
+
+/**
+ * Commit the last advancement. Every other stage gets its state.yml write swept up by the
+ * next lap's handler commit; `done` is terminal and has no next lap, so without this the
+ * operator's ticked checklist and `stage: done` sit uncommitted forever.
+ */
+async function finalizeTask(taskNumber: number, title: string, cwd: string): Promise<void> {
+  const branchName = taskBranchName(taskNumber, title);
+  const git = createGit(cwd);
+  try {
+    await checkoutBranch(git, branchName);
+    const hash = await commitAll(git, `vibe-racer: task #${taskNumber} complete`, cwd);
+    if (hash) log.success(`Committed: ${hash}`);
+  } catch (e) {
+    // A secret hit is never buried — same rule the handler wrapper follows.
+    if (e instanceof SecretDetectedError) throw e;
+    log.warn(`Task #${taskNumber} reached [done] but the final commit failed: ${String(e)}`);
+    log.warn(`Commit ${branchName} by hand — the state change itself is already on disk.`);
+    return;
+  }
+  log.success(`Task #${taskNumber} pipeline complete!`);
+  log.dim(`Merge ${branchName} when ready — vibe-racer never pushes.`);
+}
 
 export async function driveCommand(opts: {
   task?: number;
@@ -43,6 +66,9 @@ export async function driveCommand(opts: {
       if (result.advanced) {
         log.success(`Task #${task.number} advanced from [${task.stage}]`);
         task.stage = readState(task.planPath).stage;
+        if (task.stage === "done") {
+          await finalizeTask(task.number, task.title, cwd);
+        }
       }
     }
   }

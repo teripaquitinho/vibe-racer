@@ -25,9 +25,13 @@ vi.mock("../../src/state/store.js", () => ({
   updateStage: vi.fn(),
 }));
 
+class MockSecretDetectedError extends Error {}
+
 vi.mock("../../src/git/operations.js", () => ({
   createGit: vi.fn().mockReturnValue({}),
   checkoutBranch: vi.fn().mockResolvedValue(undefined),
+  commitAll: vi.fn().mockResolvedValue("final123"),
+  SecretDetectedError: MockSecretDetectedError,
 }));
 
 vi.mock("../../src/pipeline/machine.js", () => ({
@@ -156,5 +160,86 @@ describe("driveCommand", () => {
       expect.stringContaining("design-review"),
     );
     expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  describe("reaching done", () => {
+    async function adviseDone() {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([
+        { number: 4, slug: "add-qa-step", title: "Add QA step", stage: "need_decision", planPath: "/tmp/plans/0004_add-qa-step" },
+      ]);
+      const { tryAdvance } = await import("../../src/state/advancement.js");
+      vi.mocked(tryAdvance).mockResolvedValue({ advanced: true, reason: "advanced" });
+      const { readState } = await import("../../src/state/store.js");
+      vi.mocked(readState).mockReturnValue({ stage: "done", title: "Add QA step" });
+    }
+
+    it("commits on the task branch when the last checkbox advances a task to done", async () => {
+      await adviseDone();
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await driveCommand({});
+
+      const git = await import("../../src/git/operations.js");
+      expect(git.checkoutBranch).toHaveBeenCalledWith(
+        expect.anything(),
+        "vibe-racer/0004_add-qa-step",
+      );
+      expect(git.commitAll).toHaveBeenCalledWith(
+        expect.anything(),
+        "vibe-racer: task #4 complete",
+        expect.anything(),
+      );
+    });
+
+    it("announces completion", async () => {
+      await adviseDone();
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await driveCommand({});
+
+      const logger = await import("../../src/utils/logger.js");
+      const messages = vi.mocked(logger.log.success).mock.calls.map((c) => String(c[0]));
+      expect(messages.some((m) => m.includes("pipeline complete"))).toBe(true);
+    });
+
+    it("does not commit when advancement lands on a non-terminal stage", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([
+        { number: 4, slug: "t", title: "T", stage: "need_product", planPath: "/tmp/plans/0004_t" },
+      ]);
+      const { tryAdvance } = await import("../../src/state/advancement.js");
+      vi.mocked(tryAdvance).mockResolvedValue({ advanced: true, reason: "advanced" });
+      const { readState } = await import("../../src/state/store.js");
+      vi.mocked(readState).mockReturnValue({ stage: "ai_product_review", title: "T" });
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await driveCommand({});
+
+      const git = await import("../../src/git/operations.js");
+      expect(git.commitAll).not.toHaveBeenCalled();
+    });
+
+    it("warns instead of crashing when the final commit fails", async () => {
+      await adviseDone();
+      const git = await import("../../src/git/operations.js");
+      vi.mocked(git.commitAll).mockRejectedValueOnce(new Error("index.lock exists"));
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await expect(driveCommand({})).resolves.toBeUndefined();
+
+      const logger = await import("../../src/utils/logger.js");
+      const warnings = vi.mocked(logger.log.warn).mock.calls.map((c) => String(c[0]));
+      expect(warnings.some((m) => m.includes("final commit failed"))).toBe(true);
+    });
+
+    it("never buries a secret hit from the final commit", async () => {
+      await adviseDone();
+      const git = await import("../../src/git/operations.js");
+      vi.mocked(git.commitAll).mockRejectedValueOnce(new MockSecretDetectedError("secret"));
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await expect(driveCommand({})).rejects.toThrow(MockSecretDetectedError);
+    });
   });
 });
