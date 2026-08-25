@@ -1,6 +1,6 @@
-stage: ai_qa
+stage: fine_tuning
 title: Add QA step
 created: 2026-08-24T00:00:00.000Z
-updated: 2026-08-25T01:09:22.690Z
-prev: ready_to_execute
-next: fine_tuning
+updated: 2026-08-25T05:32:51.039Z
+prev: ai_qa
+next: cleanup_ready
