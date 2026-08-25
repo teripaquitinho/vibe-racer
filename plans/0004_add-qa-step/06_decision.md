@@ -27,7 +27,7 @@ Every item below must be verified **after the branch lands on main** before this
 
 - [x] **Trivial fast-path works without the agent writing `state.yml`.** The handler detects triviality via `03_plan_questions.md` file presence and sets `trivial: true` itself. Run: `npm run test -- tests/pipeline/handlers/objective-review.test.ts`. *(Source: AC6)*
 
-- [ ] **Configured skills appear in every lap's prompt; missing skills warn and degrade.** Run: `npm run test -- tests/claude/skills.test.ts`. Confirm `LAP_BY_STAGE` covers all 7 agent stages. Configure a nonexistent skill name in `.vibe-racer.yml` and drive a task — confirm the warning appears in output and the lap completes. *(Source: AC7)*
+- [x] **Configured skills appear in every lap's prompt; missing skills warn and degrade.** Run: `npm run test -- tests/claude/skills.test.ts`. Confirm `LAP_BY_STAGE` covers all 7 agent stages. Configure a nonexistent skill name in `.vibe-racer.yml` and drive a task — confirm the warning appears in output and the lap completes. *(Source: AC7)*
 
 - [x] **`pitwall` renders `ai_qa` under agent tasks and `need_decision` under human tasks. `drive` names the right file and checkbox for each new stage.** Run: `npm run test -- tests/cli/pitwall.test.ts tests/cli/drive.test.ts`. *(Source: AC8)*
 
@@ -75,11 +75,25 @@ Run on 2026-08-25 at `a0ca305` + cleanup commit `fb83983`, on branch `vibe-racer
 - Full suite: build, typecheck, lint clean. 31 files / 434 tests, up from the 427 QA recorded and the 336 baseline.
 - Backward compatibility: `pitwall --all` renders all four tasks (#1 `need_objective`, #2 and #3 `done`, #4 `need_decision`). No task on disk actually carries the old computed `next: fine_tuning`, so that case was exercised synthetically: a hand-written old-format `state.yml` parses through `readState` without throwing.
 
+**AC7 second half — verified by live session, 2026-08-25.** A fixture project configured
+`skills: { qa: ["security-review", "definitely-not-a-real-skill-xyz"] }` and ran a one-turn
+session at stage `ai_qa`. Output, verbatim:
+
+```
+Guard: path-jail to ./<plan>  ·  tools: [Read]  ·  bash: 18 commands blocked
+Skills not found (dropped from prompt): definitely-not-a-real-skill-xyz
+OK
+Session complete — 1 turns, $0.0417
+```
+
+The warning named only the bogus entry, so `security-review` resolved and stayed in the
+prompt, and the lap completed. A minimal one-turn session was used rather than a full lap:
+the probe, `partitionSkills`, and the warning all run before the session body, so the same
+code path is exercised at a fraction of the cost.
+
 **Left unticked — needs a live pipeline run (spends tokens), operator's call:**
 
-- End-to-end seven-document run (AC1). Needs a task driven `need_objective` -> `done`.
-- AC2 fixture run. Real-run evidence from this task's own QA lap is recorded verbatim in `04_execute.md` M5a Notes; the fixture run itself has not been executed.
-- Skills (AC7), second half only. The unit half passes (12 tests, `LAP_BY_STAGE` covers all 7 agent stages); driving a lap with a deliberately bogus skill name to see the warning has not been done.
+- End-to-end seven-document run (AC1). Needs a task driven `need_objective` -> `done`. Note that task #4 itself traversed every lap and produced all seven documents; what an AC1 run adds is the final `need_decision` -> `done` hop and a race where every lap runs the new code from the start.
 
 **Residual risks — reviewed one by one and signed off 2026-08-25:**
 
