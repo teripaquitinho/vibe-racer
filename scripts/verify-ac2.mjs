@@ -122,12 +122,20 @@ next: fine_tuning
     contextFiles: ["README.md", "CLAUDE.md"],
   };
 
+  // handleQa calls updateStage(ctx.planPath) with a RELATIVE path, which resolves against
+  // process.cwd() rather than ctx.cwd. In the CLI those are always the same directory, so
+  // this never shows up there — but this script drives a handler against a temp repo, so
+  // it must move into it first or the stage write lands nowhere.
+  const originalCwd = process.cwd();
+  process.chdir(tmp);
   try {
     await handleQa(ctx);
   } catch (err) {
     console.error("handleQa threw:", err.message);
     console.log("\nFixture directory preserved at:", tmp);
     process.exit(1);
+  } finally {
+    process.chdir(originalCwd);
   }
 
   // 6. Check 05_qa.md for the seeded gap

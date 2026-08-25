@@ -15,7 +15,7 @@ Every item below must be verified **after the branch lands on main** before this
 
 - [ ] **End-to-end pipeline produces seven documents (`00_objective.md` through `06_decision.md`).** Drive a test task from `need_objective` to `done`. Confirm all seven files exist in the plan directory. Confirm the task reaches `done` only after the operator ticks the decision checkbox in `06_decision.md`. *(Source: AC1)*
 
-- [ ] **QA lap finds honest negatives on incomplete work.** Run `handleQa` against the `tests/fixtures/incomplete-task/` fixture (seeded gap: `multiply()` in `src/sample.ts` lacks JSDoc). Confirm `05_qa.md`'s "What doesn't" section names the missing JSDoc — not a vague finding. Record the verbatim finding. *(Source: AC2 — QA ISSUE 10, QA Deviation D2)*
+- [x] **QA lap finds honest negatives on incomplete work.** Run `handleQa` against the `tests/fixtures/incomplete-task/` fixture (seeded gap: `multiply()` in `src/sample.ts` lacks JSDoc). Confirm `05_qa.md`'s "What doesn't" section names the missing JSDoc — not a vague finding. Record the verbatim finding. *(Source: AC2 — QA ISSUE 10, QA Deviation D2)*
 
 - [x] **`scripts/verify-ac2.mjs` exits non-zero when it cannot run verification.** Currently exits 0 on import failure, giving false confidence. Fix the script or run AC2 manually and record the result in `04_execute.md` M5a Notes. *(Source: QA ISSUE 10, Deviation D3)*
 
@@ -90,6 +90,38 @@ The warning named only the bogus entry, so `security-review` resolved and stayed
 prompt, and the lap completed. A minimal one-turn session was used rather than a full lap:
 the probe, `partitionSkills`, and the warning all run before the session body, so the same
 code path is exercised at a fraction of the cost.
+
+**AC2 — verified by live fixture run, 2026-08-25.** `npx tsx scripts/verify-ac2.mjs` built a
+throwaway repo from `tests/fixtures/incomplete-task/` and ran `handleQa` against it
+(16 turns, $0.2393). The QA report named the seeded gap precisely, verbatim from
+`05_qa.md`:
+
+> ### ISSUE 1 — `multiply()` has no JSDoc (AC1 FAIL, AC2 FAIL)
+>
+> `multiply()` (line 11) has no JSDoc block. The diff shows it was added bare [...]
+> There is exactly 1 JSDoc block in the file but 2 exported functions [...]
+> The plan's Task 2 ("Add JSDoc to `multiply()` in `src/sample.ts`") was not completed.
+
+It also found a second defect the fixture does not document as seeded — the fixture's
+execution log claims milestone M1 landed at commit `abc1234`, which does not exist:
+
+> ### ISSUE 2 — 04_execute.md references a non-existent commit
+>
+> `$ git log --oneline | grep abc1234` -> (no output). Commit `abc1234` does not exist in
+> the repository history. The actual commits on this branch are `def5d5f` and `7f40e1f`.
+> The execution log is inaccurate.
+
+Finding the planted gap proves the prompt works. Verifying a commit claim nobody asked it
+to check is the stronger signal.
+
+**The run also exposed a latent coupling, now fixed in the script.** `handleQa` calls
+`updateStage(ctx.planPath, ...)` with a *relative* path, which resolves against
+`process.cwd()` rather than `ctx.cwd`. Every handler does this; only `advancement.ts` passes
+an absolute path. In the CLI the two directories are always identical (`drive` sets
+`ctx.cwd = process.cwd()`), so nothing is broken in normal use — but any caller driving a
+handler against a different directory hits `ENOENT` on `state.yml` after the session has
+already run and been paid for. `verify-ac2.mjs` now `chdir`s into the fixture. Making the
+handlers pass absolute paths is the real fix and is not in scope here.
 
 **Left unticked — needs a live pipeline run (spends tokens), operator's call:**
 
