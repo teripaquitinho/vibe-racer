@@ -51,7 +51,7 @@ Each risk below is a deliberate scope decision documented in the plan. Sign off 
 
 - [x] **R3: The cleanup session is not write-jailed.** ~~Cleanup and decision sessions are not write-jailed.~~ **Half of this risk was closed rather than accepted.** `cleanup_ready` is still not in `PLAN_JAILED_STAGES`, because the cleanup session legitimately edits docs across the repo — that half stands, and is accepted. The decision session no longer inherits whole-repo write access: it opts into Rule 4a via `jailToPlanDir`, a per-session guard flag added because stage alone cannot separate two sessions sharing one stage. It remains restricted to `allowedTools: ["Read", "Glob", "Grep", "Write"]` — no `Edit`, no `Bash`. Verified by unit tests at three layers (guard rule, session pass-through, handler wiring); not yet exercised by a live cleanup lap. *(Source: plan "Accepted residual risks" R3, M5b task 3)*
 
-- [ ] **R4: `handleDone` does not gate on build/lint/test results.** The cleanup session's build, lint, and test runs are prose instructions in `donePrompt`, not verified gates. The session may skip them or report false success. Do not rely on the cleanup lap as a re-verification pass. *(Source: plan "Accepted residual risks" final note, M5b task 3)*
+- [x] **R4: `handleDone` does not gate on build/lint/test results.** The cleanup session's build, lint, and test runs are prose instructions in `donePrompt`, not verified gates. The session may skip them or report false success. Do not rely on the cleanup lap as a re-verification pass. *(Source: plan "Accepted residual risks" final note, M5b task 3)*
 
 ---
 
@@ -81,7 +81,17 @@ Run on 2026-08-25 at `a0ca305` + cleanup commit `fb83983`, on branch `vibe-racer
 - AC2 fixture run. Real-run evidence from this task's own QA lap is recorded verbatim in `04_execute.md` M5a Notes; the fixture run itself has not been executed.
 - Skills (AC7), second half only. The unit half passes (12 tests, `LAP_BY_STAGE` covers all 7 agent stages); driving a lap with a deliberately bogus skill name to see the warning has not been done.
 
-**Left unticked — acceptance decisions, not verifications:** R1 through R4. R2's precondition is met: `docs/security.md` now has a "Setting Sources" section documenting the widened trust boundary.
+**Residual risks — reviewed one by one and signed off 2026-08-25:**
+
+- R1 accepted as-is. The gap is `Write`/`Edit`-only; Bash redirects to `state.yml` remain possible at `ready_to_execute`, `ai_qa`, and `cleanup_ready`.
+- R2 accepted. Narrower than the risk text implies: `["project"]` was already loaded on `main`, so this task's only new exposure is the operator's own `~/.claude/settings.json`. `docs/security.md` documents the boundary, which was R2's stated precondition.
+- R3 **half closed rather than accepted** — the decision session is now jailed via `jailToPlanDir` (`fa77976`). The cleanup half stands accepted: that session must reach docs repo-wide.
+- R4 accepted. The unverified window is the cleanup lap only; QA runs build/lint/tests with pasted output one lap earlier. Deliberately not fixed here — a `verify:` key in `.vibe-racer.yml` would let a raced repo specify arbitrary commands that vibe-racer executes outside the guard, which needs a design lap rather than a call at the sign-off gate.
+
+**Two pre-existing defects surfaced while closing R3, both out of scope, neither fixed:**
+
+- Rule 2 compares `realpathSync`-resolved file paths against an unresolved `cwd`. With `cwd=/tmp/repo` on macOS (`/tmp` -> `/private/tmp`), `Write /tmp/repo/README.md` is denied "path outside project directory" while `Write /tmp/repo/src/index.ts` is allowed — the difference is only whether the file's parent directory exists. Fails closed, so it is a usability bug rather than a hole. Rule 0 already does this correctly with `realpathIfExists`.
+- `docs/security.md` states `/tmp` is an allowed write target, twice. The code allows `os.tmpdir()`, which on macOS is `/var/folders/.../T`, not `/tmp`.
 
 # Complete
 
