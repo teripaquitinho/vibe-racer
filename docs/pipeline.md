@@ -132,7 +132,7 @@ Read `05_qa.md`. Fix what needs fixing, accept what you're willing to accept. Ti
 Two sessions run back to back:
 
 1. **Cleanup** — updates project documentation (README, CLAUDE.md), runs final build/lint/test, commits.
-2. **Decision** — as a **Release Manager**, writes `06_decision.md`: a checklist of everything that must be verified *after deploy* before the task counts as delivered. Every item is concretely checkable and traced to the objective, an acceptance criterion, or a QA risk. Accepted residual risks appear as named items so you sign off on them knowingly.
+2. **Decision** — as a **Release Manager**, jailed to the plan folder, writes `06_decision.md`: a checklist of everything that must be verified *after deploy* before the task counts as delivered. Every item is concretely checkable and traced to the objective, an acceptance criterion, or a QA risk. Accepted residual risks appear as named items so you sign off on them knowingly.
 
 **Output:** Cleaned-up repo + post-deploy checklist.
 

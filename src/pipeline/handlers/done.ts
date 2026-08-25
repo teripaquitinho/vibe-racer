@@ -39,6 +39,10 @@ export async function handleDone(ctx: TaskContext): Promise<void> {
     taskPlanPath: ctx.planPath,
     plansDir: ctx.plansDir,
     maxTurns: DECISION_MAX_TURNS,
+    // The decision session writes exactly one file, inside the plan folder. The cleanup
+    // session above shares this stage but must reach docs across the repo, so the jail
+    // cannot come from the stage — it is requested per session.
+    jailToPlanDir: true,
   });
 
   // Verify 06_decision.md exists; throw if not

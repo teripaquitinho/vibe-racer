@@ -11,6 +11,13 @@ export interface GuardOptions {
   stage: Stage;
   taskPlanPath: string;
   plansDir: string;
+  /**
+   * Jail Write/Edit to the task plan folder regardless of stage. Needed because two
+   * sessions can share one stage with different needs: at `cleanup_ready` the cleanup
+   * session must edit docs repo-wide, while the decision session only writes one file.
+   * Stage alone cannot tell them apart.
+   */
+  jailToPlanDir?: boolean;
 }
 
 const PLAN_JAILED_STAGES: Set<Stage> = new Set([
@@ -283,7 +290,7 @@ function checkBashCommand(command: string, cwd: string): PermissionResult {
 }
 
 export function createToolGuard(options: GuardOptions): CanUseTool {
-  const { cwd, stage, taskPlanPath } = options;
+  const { cwd, stage, taskPlanPath, jailToPlanDir = false } = options;
 
   function deny(tool: string, inputSummary: string, reason: string): PermissionResult {
     const msg = `Denied: ${tool} ${inputSummary} — ${reason}`;
@@ -334,10 +341,13 @@ export function createToolGuard(options: GuardOptions): CanUseTool {
           }
 
           // Rule 4a: Plan-jailed stages Write/Edit restriction
-          if ((toolName === "Write" || toolName === "Edit") && PLAN_JAILED_STAGES.has(stage)) {
+          if (
+            (toolName === "Write" || toolName === "Edit") &&
+            (jailToPlanDir || PLAN_JAILED_STAGES.has(stage))
+          ) {
             const planDir = resolve(cwd, taskPlanPath) + sep;
             if (!resolved.startsWith(planDir) && resolved !== resolve(cwd, taskPlanPath)) {
-              return deny(toolName, rawPath, `review stage: writes restricted to ${taskPlanPath}/`);
+              return deny(toolName, rawPath, `writes restricted to ${taskPlanPath}/`);
             }
           }
         }
@@ -376,8 +386,12 @@ export function createToolGuard(options: GuardOptions): CanUseTool {
 export function formatGuardSummary(
   stage: Stage,
   allowedTools: string[],
+  jailToPlanDir = false,
 ): string {
-  const jailed = PLAN_JAILED_STAGES.has(stage);
+  // Must mirror the Rule 4a condition exactly. A banner that says "path-jail to ./" while
+  // writes are actually jailed is the same defect class as a script that prints PASS
+  // without testing anything.
+  const jailed = jailToPlanDir || PLAN_JAILED_STAGES.has(stage);
   const bashBlocked = BASH_BLOCKED_STAGES.has(stage);
   const pathNote = jailed ? "path-jail to ./<plan>" : "path-jail to ./";
   const bashNote = bashBlocked ? "bash: blocked (review stage)" : `bash: ${BASH_BLOCKLIST.length} commands blocked`;

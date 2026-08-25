@@ -17,6 +17,8 @@ export interface SessionOptions {
   taskPlanPath?: string;
   plansDir?: string;
   lap?: string | null;
+  /** Jail Write/Edit to the task plan folder regardless of stage. See GuardOptions. */
+  jailToPlanDir?: boolean;
 }
 
 export async function runAndStream(options: SessionOptions): Promise<string> {
@@ -31,9 +33,12 @@ export async function runAndStream(options: SessionOptions): Promise<string> {
       stage: options.stage,
       taskPlanPath: options.taskPlanPath ?? "",
       plansDir: options.plansDir ?? loadConfig(options.cwd).plans_dir,
+      jailToPlanDir: options.jailToPlanDir,
     });
     canUseTool = guard;
-    log.guard(formatGuardSummary(options.stage, options.allowedTools ?? []));
+    log.guard(
+      formatGuardSummary(options.stage, options.allowedTools ?? [], options.jailToPlanDir),
+    );
   }
 
   // Derive lap from stage when not explicitly given. Explicit `null` opts out entirely.

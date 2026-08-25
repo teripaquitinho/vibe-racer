@@ -77,8 +77,23 @@ describe("handleDone", () => {
         allowedTools: ["Read", "Glob", "Grep", "Write"],
         plansDir: "plans",
         maxTurns: 30,
+        jailToPlanDir: true,
       }),
     );
+  });
+
+  it("jails the decision session to the plan folder but not the cleanup session", async () => {
+    mockExistsSync.mockReturnValue(true);
+
+    const { handleDone } = await import("../../../src/pipeline/handlers/done.js");
+    await handleDone(CTX);
+
+    // Both share stage cleanup_ready, so the jail cannot come from the stage. Cleanup must
+    // stay free to edit docs across the repo; the decision session writes one file.
+    const [cleanupCall] = mockRunAndStream.mock.calls[0];
+    const [decisionCall] = mockRunAndStream.mock.calls[1];
+    expect(cleanupCall.jailToPlanDir).toBeUndefined();
+    expect(decisionCall.jailToPlanDir).toBe(true);
   });
 
   it("throws when 06_decision.md is absent and does not advance the stage", async () => {

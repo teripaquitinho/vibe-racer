@@ -65,7 +65,9 @@ Any file matching `.env*` (`.env`, `.env.local`, `.env.production`, etc.) is den
 
 During review stages — objective, product, design, plan, and QA — Write and Edit are restricted to the task's plan folder (`plans/<task>/`). This prevents the agent from modifying source code during review, and is what keeps the QA lap judging rather than fixing.
 
-The cleanup and decision sessions are **not** plan-jailed: cleanup legitimately updates project documentation. The decision session is constrained instead by its `allowedTools` (no Edit, no Bash).
+The cleanup session is **not** plan-jailed: it legitimately updates project documentation across the repo.
+
+The decision session shares its stage (`cleanup_ready`) but writes exactly one file, so it opts into the jail explicitly via `jailToPlanDir`, a per-session flag that applies Rule 4a regardless of stage. Stage alone cannot separate two sessions that run back to back under the same stage. It is additionally constrained by its `allowedTools` (no Edit, no Bash).
 
 #### 5. Bash Command Filter
 
@@ -143,6 +145,7 @@ The audit log has a 1 MB size cap. Audit write failures never break the guard (f
 | Prompt injection via project files | Guard constrains blast radius but can't prevent all injected instructions |
 | Bash can still write `state.yml` (Rule 0 covers Write/Edit only) | No prompt instructs it; the bash blocklist and audit log cover the rest |
 | Project and user settings (hooks, MCP servers, permissions) are loaded into every session | Review `.claude/settings.json` in untrusted repos; the tool guard still applies |
+| The cleanup session has repo-wide write access | Unavoidable — it is the lap that updates docs. Its output is committed on your branch and visible in `git diff` |
 
 ## Docker Recommendation
 

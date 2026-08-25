@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **QA lap (`ai_qa` -> `fine_tuning`)** — after the last execution milestone, a Senior QA Engineer session scoped to `git diff main...HEAD` writes `05_qa.md`: what works, what doesn't, what regressed, deviations, risks, and a verbatim verification run. Write-jailed to the plan folder, so it judges without fixing
 - **Decision lap (`cleanup_ready` -> `need_decision`)** — the cleanup session is followed by a Release Manager session that writes `06_decision.md`, a post-deploy checklist traced to the objective, the acceptance criteria, and the QA risks. `drive` refuses to reach `done` while any `- [ ]` remains in it
 - **Per-lap skills** — every agent stage maps to a lap, and each lap resolves to a list of Claude Code skills (`skills` key in `.vibe-racer.yml`; defaults: `simplify` on execute, `security-review` on QA). Missing names warn and are skipped; a failed probe degrades to persona-only
+- **`jailToPlanDir`** — a per-session guard flag that applies the Rule 4a write jail regardless of stage. The cleanup and decision sessions share the `cleanup_ready` stage but have opposite needs (cleanup edits docs repo-wide; the decision session writes one file), and stage alone cannot separate them. The decision session is now jailed to the plan folder
 - **Guard Rule 0** — `Write`/`Edit` to any `state.yml` under `plans_dir` is denied at every stage. `state.yml` is pipeline-owned; only `updateStage` moves a task
 - New personas: QA Engineer and Release Manager
 

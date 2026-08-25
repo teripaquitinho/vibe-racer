@@ -216,7 +216,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage: writes restricted to",
+        "writes restricted to",
       );
     });
 
@@ -229,7 +229,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage",
+        "writes restricted to",
       );
     });
   });
@@ -246,7 +246,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage",
+        "writes restricted to",
       );
     });
   });
@@ -837,7 +837,7 @@ describe("createToolGuard", () => {
         stubOptions,
       );
       expect(result.behavior).toBe("deny");
-      expect((result as { message: string }).message).toContain("review stage: writes restricted to");
+      expect((result as { message: string }).message).toContain("writes restricted to");
     });
 
     it("allows Write to plan dir at ai_qa", async () => {
@@ -848,6 +848,62 @@ describe("createToolGuard", () => {
         stubOptions,
       );
       expect(result.behavior).toBe("allow");
+    });
+  });
+
+  // ─── Rule 4a: per-session jail (jailToPlanDir) ───────────
+
+  describe("Rule 4a — jailToPlanDir at a stage that is not plan-jailed", () => {
+    it("denies Write outside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/index.ts" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("writes restricted to");
+    });
+
+    it("denies Edit outside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Edit",
+        { file_path: "/home/testuser/project/README.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+    });
+
+    it("allows Write inside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/06_decision.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("leaves cleanup_ready unjailed when the flag is absent", async () => {
+      // The cleanup session shares this stage and must reach docs across the repo.
+      const guard = makeGuard({ stage: "cleanup_ready" });
+      const result = await guard(
+        "Edit",
+        { file_path: "/home/testuser/project/README.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("does not loosen an already-jailed stage when the flag is false", async () => {
+      const guard = makeGuard({ stage: "ai_qa", jailToPlanDir: false });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/index.ts" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
     });
   });
 
@@ -957,5 +1013,18 @@ describe("formatGuardSummary", () => {
     expect(result).toMatch(
       /Guard: path-jail to \.\/  ·  tools: \[Read, Glob, Grep, Write, Edit, Bash\]  ·  bash: \d+ commands blocked/,
     );
+  });
+
+  it("reports the plan jail when jailToPlanDir is set at an unjailed stage", () => {
+    // The banner must mirror Rule 4a, or it tells the operator writes are repo-wide
+    // while the guard is denying them.
+    const result = formatGuardSummary("cleanup_ready", ["Read", "Glob", "Grep", "Write"], true);
+    expect(result).toContain("path-jail to ./<plan>");
+  });
+
+  it("reports no plan jail at cleanup_ready without the flag", () => {
+    const result = formatGuardSummary("cleanup_ready", ["Read", "Glob", "Grep", "Write"]);
+    expect(result).toContain("path-jail to ./ ");
+    expect(result).not.toContain("<plan>");
   });
 });
