@@ -13,7 +13,7 @@ Every item below must be verified **after the branch lands on main** before this
 
 - [x] **`package.json` description and `src/cli/index.ts` --help say "seven laps."** These ship to npm and terminal output. Run `node dist/index.js --help` and confirm "seven laps" appears, not "five laps." *(Source: QA ISSUE 9 — AC11, plan M6 tasks 2-3)*
 
-- [ ] **End-to-end pipeline produces seven documents (`00_objective.md` through `06_decision.md`).** Drive a test task from `need_objective` to `done`. Confirm all seven files exist in the plan directory. Confirm the task reaches `done` only after the operator ticks the decision checkbox in `06_decision.md`. *(Source: AC1)*
+- [x] **End-to-end pipeline produces seven documents (`00_objective.md` through `06_decision.md`).** Drive a test task from `need_objective` to `done`. Confirm all seven files exist in the plan directory. Confirm the task reaches `done` only after the operator ticks the decision checkbox in `06_decision.md`. *(Source: AC1)*
 
 - [x] **QA lap finds honest negatives on incomplete work.** Run `handleQa` against the `tests/fixtures/incomplete-task/` fixture (seeded gap: `multiply()` in `src/sample.ts` lacks JSDoc). Confirm `05_qa.md`'s "What doesn't" section names the missing JSDoc — not a vague finding. Record the verbatim finding. *(Source: AC2 — QA ISSUE 10, QA Deviation D2)*
 
@@ -141,4 +141,4 @@ handlers pass absolute paths is the real fix and is not in scope here.
 
 # Complete
 
-- [ ] Ready to advance to Done
+- [x] Ready to advance to Done

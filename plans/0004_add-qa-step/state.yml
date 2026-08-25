@@ -1,6 +1,6 @@
-stage: need_decision
+stage: done
 title: Add QA step
 created: 2026-08-24T00:00:00.000Z
-updated: 2026-08-25T06:54:10.666Z
-prev: cleanup_ready
-next: done
+updated: 2026-08-25T10:02:42.723Z
+prev: need_decision
+next: null
