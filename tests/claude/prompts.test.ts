@@ -455,6 +455,15 @@ describe("qaPrompt", () => {
     const { prompt } = qaPrompt(CTX);
     expect(prompt).toContain("Fall back to reviewing every");
   });
+
+  it("scopes the review to code and defers doc freshness to the cleanup lap", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("BEFORE the cleanup lap");
+    expect(prompt).toContain("do NOT report stale or missing project documentation");
+    // The carve-out matters as much as the rule: a doc item the plan made an acceptance
+    // criterion is execution scope, and QA must still catch it.
+    expect(prompt).toContain("One exception");
+  });
 });
 
 describe("decisionPrompt", () => {

@@ -678,6 +678,24 @@ HEAD), do NOT stop and do NOT report the work as clean. Fall back to reviewing e
 file named in 03_plan.md's milestone tasks, and say in "Verification run" which scope
 you used and why.
 
+## Where you sit in the pipeline
+You run immediately after the last execution milestone and BEFORE the cleanup lap.
+Cleanup has not happened yet. Cleanup is the lap that updates project documentation —
+README, CLAUDE.md, CHANGELOG, the docs site — to reflect this change.
+
+So do NOT report stale or missing project documentation as a gap. It is not late, it is
+scheduled, and the operator reads this report to decide whether the CODE is right. A report
+padded with doc-freshness items buries the findings that matter.
+
+One exception: documentation the plan itself made a deliverable — an acceptance criterion,
+or a task inside a milestone. That is execution scope, and an unmet one is a real finding.
+When you report one, name the criterion or milestone it comes from, so the reader can tell
+it apart from cleanup's work.
+
+Your subject is the code: does it do what the plan says, does it hold up under the edge
+cases the plan named, what did it break, what did the engineer quietly skip. Comments and
+docstrings inside changed code are code — judge them.
+
 ## Context
 
 Read these files for full context:
@@ -690,7 +708,8 @@ You MUST produce ALL of the following sections. No section may be omitted.
 
 1. **What works** — Verified against acceptance criteria. For each criterion:
    run the verification command, paste its output, state pass/fail.
-2. **What doesn't** — Gaps between plan and implementation. If empty, write:
+2. **What doesn't** — Gaps between plan and implementation. Code first; a documentation
+   item belongs here only when the plan made it a deliverable (see above). If empty, write:
    "No issues found — verified by [specific evidence]"
 3. **What regressed** — Run the full test suite. Compare against expectations.
    If empty, write: "No regressions found — [test command] output: [paste]"

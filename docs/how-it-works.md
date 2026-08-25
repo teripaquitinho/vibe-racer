@@ -134,7 +134,7 @@ When the last milestone lands, the task advances to `ai_qa` rather than straight
 
 Two sessions close out a task:
 
-- **QA (`ai_qa`)** — a QA Engineer session scoped to `git diff main...HEAD` writes `05_qa.md`: what works, what doesn't, what regressed, deviations, risks, and a verbatim verification run. It is write-jailed to the plan folder, so it judges without fixing. If the session does not produce `05_qa.md`, the handler throws rather than advancing — an unwritten report would otherwise strand the task at a pit stop with no file to tick.
+- **QA (`ai_qa`)** — a QA Engineer session scoped to `git diff main...HEAD` writes `05_qa.md`: what works, what doesn't, what regressed, deviations, risks, and a verbatim verification run. It is write-jailed to the plan folder, so it judges without fixing. Because it runs before cleanup, it reviews the code and leaves project-documentation freshness to the cleanup lap — unless the plan made a doc an acceptance criterion. If the session does not produce `05_qa.md`, the handler throws rather than advancing — an unwritten report would otherwise strand the task at a pit stop with no file to tick.
 - **Decision (`cleanup_ready`)** — the cleanup session runs first (docs, final build/lint/test, commit), then a Release Manager session writes `06_decision.md`, the post-deploy checklist. Same guard: no file, no advancement.
 
 Both handlers append the completion checkbox only if the document does not already carry one,

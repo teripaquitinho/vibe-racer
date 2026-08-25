@@ -113,6 +113,8 @@ Execution does not hand straight to cleanup. The race engineer re-reads the task
 
 The QA session judges, it does not fix. It is write-jailed to the plan folder and cannot touch source.
 
+**Its subject is the code.** QA runs *before* the cleanup lap, so project documentation is expected to be stale at this point — reporting it would be reporting work that is scheduled rather than missed. The exception is documentation the plan made a deliverable: an acceptance criterion or a milestone task. Those are execution scope, and QA names the criterion when it reports one.
+
 **Output:** QA report.
 
 ### Pit stop: Act on the findings (`fine_tuning`)
