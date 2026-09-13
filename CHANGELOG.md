@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Tasks at `fine_tuning` advanced to `cleanup_ready` without human input** ([#3](https://github.com/teripaquitinho/vibe-racer/issues/3)). `fine_tuning` and `need_execution` both pointed at `04_execute.md`, so the tick that left `need_execution` was still in the file when the task reached `fine_tuning` and advanced it a second time. `fine_tuning` now reads `05_qa.md`, which the QA lap writes with a fresh unchecked box
 - Completion sections are appended only when the document has none. A session that wrote its own "# Complete" block previously left two checkboxes in one file — at `need_decision` the second, unticked one was counted as an unworked checklist item, so the task could not advance
 - `removeCompletionMarker` unchecks every marker in a file, not just the first
+- **Every lap failed with `claude_code_version_too_old` when the user's Claude Code settings select a Claude 5 model**. `@anthropic-ai/claude-agent-sdk` was pinned to `^0.2.x`, which bundles Claude Code 2.1.101; Fable 5.1 and the other Claude 5 models require 2.1.251 or newer. Bumped to `^0.3.270` (bundles Claude Code 2.1.270)
 - Reaching `done` left the task uncommitted. Every other stage has its `state.yml` write swept up by the next lap's handler commit, but `done` is terminal — so the operator's worked checklist and the final stage write sat dirty in the working tree with no lap left to commit them. `drive` now commits on the task branch and reports the task complete
 
 ## [0.2.0] - 2026-04-16
