@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import path from "path";
 import os from "os";
 import { stringify } from "yaml";
-import { readState, updateStage, setError } from "../../src/state/store.js";
+import { readState, writeState, updateStage, setError } from "../../src/state/store.js";
 
 let tmpDir: string;
 
@@ -77,7 +77,7 @@ describe("updateStage", () => {
     writeTmpState({ stage: "need_objective", title: "Test" });
     updateStage(tmpDir, "done");
     const state = readState(tmpDir);
-    expect(state.prev).toBe("cleanup_ready");
+    expect(state.prev).toBe("need_decision");
     expect(state.next).toBeNull();
   });
 
@@ -116,5 +116,66 @@ describe("setError", () => {
     const state = readState(tmpDir);
     expect(state.prev).toBeNull();
     expect(state.next).toBeNull();
+  });
+
+  it("survives invalid YAML in state.yml and salvages title/created/trivial", () => {
+    writeFileSync(
+      path.join(tmpDir, "state.yml"),
+      "stage: bogus_stage\ntitle: Salvageable\ncreated: 2026-01-01\ntrivial: true\n",
+      "utf-8",
+    );
+    setError(tmpDir, "ai_product_review", "context exceeded");
+    const state = readState(tmpDir);
+    expect(state.stage).toBe("error");
+    expect(state.error_stage).toBe("ai_product_review");
+    expect(state.error_message).toBe("context exceeded");
+    expect(state.title).toBe("Salvageable");
+    expect(state.created).toBe("2026-01-01");
+    expect(state.trivial).toBe(true);
+  });
+
+  it("survives missing state.yml with fallback title", () => {
+    // tmpDir has no state.yml at all
+    const subDir = path.join(tmpDir, "0042_my-task");
+    require("fs").mkdirSync(subDir, { recursive: true });
+    setError(subDir, "ready_to_execute", "session crash");
+    const state = readState(subDir);
+    expect(state.stage).toBe("error");
+    expect(state.title).toBe("0042_my-task");
+    expect(state.error_stage).toBe("ready_to_execute");
+  });
+
+  it("does not throw when salvaged record would fail stateSchema.parse", () => {
+    // Write YAML that salvages a `next` field with an old invalid value
+    writeFileSync(
+      path.join(tmpDir, "state.yml"),
+      "stage: bogus\ntitle: Test\nnext: ai_plan\n",
+      "utf-8",
+    );
+    expect(() => setError(tmpDir, "ai_plan_review", "boom")).not.toThrow();
+    const state = readState(tmpDir);
+    expect(state.stage).toBe("error");
+  });
+
+  it("regression: setError on state.yml with next: ai_plan writes valid error", () => {
+    writeFileSync(
+      path.join(tmpDir, "state.yml"),
+      "stage: need_plan\ntitle: Old task\nnext: ai_plan\n",
+      "utf-8",
+    );
+    expect(() => setError(tmpDir, "ai_plan_review", "failed")).not.toThrow();
+    const state = readState(tmpDir);
+    expect(state.stage).toBe("error");
+    expect(state.error_stage).toBe("ai_plan_review");
+    expect(state.title).toBe("Old task");
+  });
+});
+
+describe("writeState — validate-on-write", () => {
+  it("rejects invalid state object with Zod validation error", () => {
+    writeTmpState({ stage: "need_objective", title: "Test" });
+    expect(() =>
+      writeState(tmpDir, { stage: "not_a_real_stage", title: "Bad" } as any),
+    ).toThrow();
   });
 });

@@ -6,7 +6,9 @@ import {
   validateAnswers,
   hasCompletionMarker,
   removeCompletionMarker,
+  ensureCompletionSection,
   countFollowUpRounds,
+  validateDecisionChecklist,
 } from "../../src/pipeline/validation.js";
 
 describe("validateAnswers", () => {
@@ -197,6 +199,57 @@ describe("removeCompletionMarker", () => {
     expect(content).not.toContain("[x]");
     expect(content).toContain("Answer text");
   });
+
+  it("unchecks every marker when a file ended up with more than one", () => {
+    const file = path.join(tmpDir, "test.md");
+    writeFileSync(
+      file,
+      "Report\n\n# Complete\n\n- [x] Ready to advance to Cleanup\n\n# Complete\n\n- [x] Ready to advance to Cleanup\n",
+      "utf-8",
+    );
+    removeCompletionMarker(file);
+    expect(readFileSync(file, "utf-8")).not.toContain("[x]");
+  });
+});
+
+describe("ensureCompletionSection", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "jugg-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("appends the section when the file has none", () => {
+    const file = path.join(tmpDir, "05_qa.md");
+    writeFileSync(file, "# QA Report\n\nFindings.\n", "utf-8");
+    expect(ensureCompletionSection(file, "Cleanup")).toBe(true);
+    const content = readFileSync(file, "utf-8");
+    expect(content).toContain("- [ ] Ready to advance to Cleanup");
+    expect(content.match(/^# Complete$/gm)).toHaveLength(1);
+  });
+
+  it("does not append a second section when the agent wrote its own", () => {
+    const file = path.join(tmpDir, "05_qa.md");
+    writeFileSync(
+      file,
+      "# QA Report\n\nFindings.\n\n# Complete\n\n- [ ] Ready to advance to Cleanup\n",
+      "utf-8",
+    );
+    expect(ensureCompletionSection(file, "Cleanup")).toBe(false);
+    const content = readFileSync(file, "utf-8");
+    expect(content.match(/Ready to advance/g)).toHaveLength(1);
+  });
+
+  it("treats an already-ticked marker as present", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(file, "- [x] Ready to advance to Done\n", "utf-8");
+    expect(ensureCompletionSection(file, "Done")).toBe(false);
+    expect(readFileSync(file, "utf-8").match(/Ready to advance/g)).toHaveLength(1);
+  });
 });
 
 describe("countFollowUpRounds", () => {
@@ -256,5 +309,68 @@ describe("countFollowUpRounds", () => {
     ).join("\n");
     writeFileSync(file, `# Product Questions\n\n## Scope\n\n${questions}`, "utf-8");
     expect(countFollowUpRounds(file)).toBe(0);
+  });
+});
+
+describe("validateDecisionChecklist", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "jugg-val-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns valid: true when all items are ticked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n- [x] Check logs\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(true);
+    expect(result.unchecked).toEqual([]);
+  });
+
+  it("returns unticked items with correct line numbers", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n- [ ] Check logs\n- [ ] Run smoke test\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(false);
+    expect(result.unchecked).toHaveLength(2);
+    expect(result.unchecked[0]).toEqual({ line: 4, text: "- [ ] Check logs" });
+    expect(result.unchecked[1]).toEqual({ line: 5, text: "- [ ] Run smoke test" });
+  });
+
+  it("does not count - [x] Ready to advance to Done as unchecked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Verify deploy\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(true);
+    expect(result.unchecked).toEqual([]);
+  });
+
+  it("counts an indented - [ ] sub-item as unchecked", () => {
+    const file = path.join(tmpDir, "06_decision.md");
+    writeFileSync(
+      file,
+      "# Decision\n\n- [x] Top-level item\n  - [ ] Indented sub-item\n\n# Complete\n\n- [x] Ready to advance to Done\n",
+      "utf-8",
+    );
+    const result = validateDecisionChecklist(file);
+    expect(result.valid).toBe(false);
+    expect(result.unchecked).toHaveLength(1);
+    expect(result.unchecked[0].text).toBe("- [ ] Indented sub-item");
   });
 });

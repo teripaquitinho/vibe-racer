@@ -1,7 +1,7 @@
 {
   "name": "vibe-racer",
   "version": "0.2.0",
-  "description": "Your AI race engineer — five laps from objective to shipped code, you call the pit stops",
+  "description": "Your AI race engineer — seven laps from objective to shipped code, you call the pit stops",
   "type": "module",
   "bin": {
     "vibe-racer": "./dist/index.js"
@@ -61,7 +61,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.62",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.270",
     "@inquirer/prompts": "^8.3.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",

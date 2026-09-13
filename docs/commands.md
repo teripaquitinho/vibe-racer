@@ -79,17 +79,29 @@ vibe-racer drive --retry
 | Flag | Description |
 |---|---|
 | `-t, --task <number>` | Drive a specific task by number |
-| `--retry` | Retry tasks in error state |
+| `--retry` | Retry tasks in error state, resuming from the stage that failed |
 
 **What it does:**
 1. Checks prerequisites (git, API key)
 2. Scans for tasks with ticked checkboxes and advances them
 3. Finds race-engineer-actionable tasks (or uses `--task`)
 4. Creates/checks out the task branch
-5. Runs the appropriate Claude Code session with the lap's persona
+5. Runs the appropriate Claude Code session with the lap's persona and skills
 6. Commits artifacts
 
 If multiple tasks are actionable, prompts you to choose.
+
+**After execution:** the last milestone does not end the task. `drive` advances it to `ai_qa` and prints a hint — run `drive` again to start the QA lap, which writes `05_qa.md`.
+
+**`--retry`:** when a session fails, the task moves to `error` and the stage it failed at is
+recorded in `error_stage`. `--retry` reads that field, restores the task to that stage, and
+dispatches its handler once. If `error_stage` holds something the current version doesn't
+recognize (an older release wrote handler names there), `drive` says so and asks you to set
+`stage:` in `state.yml` by hand rather than guessing.
+
+**The final pit stop is enforced:** at `need_decision`, `drive` refuses to finish a task while
+any `- [ ]` remains in `06_decision.md`. It prints each unworked line with its line number and
+unticks the completion checkbox.
 
 ---
 
@@ -134,7 +146,7 @@ vibe-racer fasten --force
 1. Checks for active fasten plans (warns if one exists; use `--force` to override)
 2. Runs a dead code analysis via Claude (read-only — scans codebase without writing)
 3. Creates a plan folder (`NNNN_fasten-YYYY-MM-DD`) with findings in `00_objective.md`
-4. Sets `state.yml` with `trivial: true` — skips product and design laps
+4. Writes its findings straight into `03_plan_questions.md`, which marks the plan trivial — skipping the product and design laps
 5. Prints a summary; review the findings, tick the checkbox, then `vibe-racer drive`
 
 If no dead code is found, no plan folder is created and a clean message is printed.

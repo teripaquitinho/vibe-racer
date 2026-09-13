@@ -43,7 +43,7 @@ describe("nextStage", () => {
   it("returns the next stage in sequence", () => {
     expect(nextStage("need_objective")).toBe("ai_objective_review");
     expect(nextStage("ai_objective_review")).toBe("need_product");
-    expect(nextStage("cleanup_ready")).toBe("done");
+    expect(nextStage("cleanup_ready")).toBe("need_decision");
   });
 
   it("returns null for the last stage", () => {
@@ -54,11 +54,41 @@ describe("nextStage", () => {
 describe("previousStage", () => {
   it("returns the previous stage", () => {
     expect(previousStage("ai_objective_review")).toBe("need_objective");
-    expect(previousStage("done")).toBe("cleanup_ready");
+    expect(previousStage("done")).toBe("need_decision");
   });
 
   it("returns null for the first stage", () => {
     expect(previousStage("need_objective")).toBeNull();
+  });
+});
+
+describe("stage order regression", () => {
+  it("nextStage(need_plan) === ai_plan_review", () => {
+    expect(nextStage("need_plan")).toBe("ai_plan_review");
+  });
+
+  it("nextStage(ready_to_execute) === ai_qa", () => {
+    expect(nextStage("ready_to_execute")).toBe("ai_qa");
+  });
+
+  it("nextStage(ai_qa) === fine_tuning", () => {
+    expect(nextStage("ai_qa")).toBe("fine_tuning");
+  });
+
+  it("nextStage(cleanup_ready) === need_decision", () => {
+    expect(nextStage("cleanup_ready")).toBe("need_decision");
+  });
+
+  it("nextStage(need_decision) === done", () => {
+    expect(nextStage("need_decision")).toBe("done");
+  });
+
+  it("isAgentStage(ai_qa) === true", () => {
+    expect(isAgentStage("ai_qa")).toBe(true);
+  });
+
+  it("isHumanStage(need_decision) === true", () => {
+    expect(isHumanStage("need_decision")).toBe(true);
   });
 });
 
@@ -69,6 +99,7 @@ describe("STAGE_QUESTIONS_FILE", () => {
     expect(STAGE_QUESTIONS_FILE.need_design).toBe("02_design_questions.md");
     expect(STAGE_QUESTIONS_FILE.need_plan).toBe("03_plan_questions.md");
     expect(STAGE_QUESTIONS_FILE.need_execution).toBe("04_execute.md");
-    expect(STAGE_QUESTIONS_FILE.fine_tuning).toBe("04_execute.md");
+    expect(STAGE_QUESTIONS_FILE.fine_tuning).toBe("05_qa.md");
+    expect(STAGE_QUESTIONS_FILE.need_decision).toBe("06_decision.md");
   });
 });

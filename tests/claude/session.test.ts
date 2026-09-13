@@ -18,6 +18,11 @@ vi.mock("../../src/utils/logger.js", () => ({
   },
 }));
 
+vi.mock("../../src/config/loader.js", () => ({
+  loadConfig: () => ({ plans_dir: "plans", context: ["README.md", "CLAUDE.md"] }),
+  findProjectRoot: () => "/tmp/repo",
+}));
+
 describe("runAndStream", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -55,12 +60,70 @@ describe("runAndStream", () => {
           preset: "claude_code",
           append: "You are an expert.",
         },
-        settingSources: ["project"],
+        settingSources: ["project", "user"],
         allowedTools: ["Read", "Write"],
         maxTurns: 10,
         includePartialMessages: true,
       }),
     });
+  });
+
+  it("forwards jailToPlanDir into the guard it builds", async () => {
+    // guard.js is NOT mocked here, so this exercises the real chain:
+    // runAndStream -> createToolGuard -> Rule 4a. It is the link the handler and guard
+    // unit tests cannot cover on their own.
+    async function* fakeStream() {
+      yield { type: "result" as const, result: "done", num_turns: 1, total_cost_usd: 0.01 };
+    }
+    mockQuery.mockReturnValue(fakeStream());
+
+    const { runAndStream } = await import("../../src/claude/session.js");
+    await runAndStream({
+      ...baseOptions,
+      cwd: "/workspace/project",
+      stage: "cleanup_ready",
+      taskPlanPath: "plans/0001_task",
+      plansDir: "plans",
+      jailToPlanDir: true,
+    });
+
+    // calls accumulate across tests in this file — take the call this test just made
+    const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1];
+    const canUseTool = lastCall[0].options.canUseTool;
+    expect(canUseTool).toBeDefined();
+
+    const stub = { signal: new AbortController().signal, toolUseID: "t1" };
+    const outside = await canUseTool("Write", { file_path: "/workspace/project/src/index.ts" }, stub);
+    expect(outside.behavior).toBe("deny");
+
+    const inside = await canUseTool(
+      "Write",
+      { file_path: "/workspace/project/plans/0001_task/06_decision.md" },
+      stub,
+    );
+    expect(inside.behavior).toBe("allow");
+  });
+
+  it("leaves cleanup_ready unjailed when jailToPlanDir is not set", async () => {
+    async function* fakeStream() {
+      yield { type: "result" as const, result: "done", num_turns: 1, total_cost_usd: 0.01 };
+    }
+    mockQuery.mockReturnValue(fakeStream());
+
+    const { runAndStream } = await import("../../src/claude/session.js");
+    await runAndStream({
+      ...baseOptions,
+      cwd: "/workspace/project",
+      stage: "cleanup_ready",
+      taskPlanPath: "plans/0001_task",
+      plansDir: "plans",
+    });
+
+    const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1];
+    const canUseTool = lastCall[0].options.canUseTool;
+    const stub = { signal: new AbortController().signal, toolUseID: "t1" };
+    const result = await canUseTool("Write", { file_path: "/workspace/project/README.md" }, stub);
+    expect(result.behavior).toBe("allow");
   });
 
   it("streams text deltas to stdout", async () => {
@@ -111,6 +174,32 @@ describe("runAndStream", () => {
     const result = await runAndStream(baseOptions);
 
     expect(result).toBe("final output");
+  });
+
+  it("does not spawn a probe query for a stage whose lap has no skills", async () => {
+    async function* fakeStream() {
+      yield {
+        type: "result" as const,
+        result: "done",
+        num_turns: 1,
+        total_cost_usd: 0.01,
+      };
+    }
+    mockQuery.mockReturnValue(fakeStream());
+
+    const { runAndStream } = await import("../../src/claude/session.js");
+
+    const callCountBefore = mockQuery.mock.calls.length;
+    // ai_objective_review maps to lap "objective" which has DEFAULT_SKILLS = []
+    await runAndStream({
+      ...baseOptions,
+      stage: "ai_objective_review",
+      taskPlanPath: "plans/0001_test",
+      plansDir: "plans",
+    });
+
+    // query should be called exactly once more (the real session), not twice (probe + session)
+    expect(mockQuery.mock.calls.length - callCountBefore).toBe(1);
   });
 
   it("ignores non-text-delta stream events", async () => {

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Your AI race engineer. Five laps from objective to shipped code — you call the pit stops.</strong>
+  <strong>Your AI race engineer. Seven laps from objective to shipped code — you call the pit stops.</strong>
 </p>
 
 <p align="center">
@@ -64,17 +64,22 @@ vibe-racer new "Add user authentication"
 vibe-racer drive
 ```
 
-The race engineer picks up the task, generates product questions pre-filled with its recommended answers, and commits them. Review the answers, edit only what you disagree with, tick the checkbox, and run `vibe-racer drive` again. Repeat through all five laps.
+The race engineer picks up the task, generates product questions pre-filled with its recommended answers, and commits them. Review the answers, edit only what you disagree with, tick the checkbox, and run `vibe-racer drive` again. Repeat through all seven laps.
 
-## The Five Laps
+## The Seven Laps
 
-Each task races through 5 laps, producing 5 documents:
+Each task races through 7 laps, producing 7 documents:
 
 ```
 Lap 1          Lap 2          Lap 3         Lap 4        Lap 5
 Objective  ->  Product    ->  Design    ->  Plan     ->  Execute
     |              |              |             |            |
-  pit stop       pit stop       pit stop     pit stop     finish line
+  pit stop       pit stop       pit stop     pit stop       |
+                                                            v
+                                                   Lap 6        Lap 7
+                                                   QA       ->  Decision
+                                                    |              |
+                                                  pit stop      finish line
 ```
 
 | Lap | Race engineer role | Output |
@@ -84,6 +89,8 @@ Objective  ->  Product    ->  Design    ->  Plan     ->  Execute
 | 3. Design review | Software Architect | Design spec + plan questions |
 | 4. Plan review | Software Engineer | Implementation plan + execution playbook |
 | 5. Execute | Software Engineer | Working code, milestone by milestone |
+| 6. QA | QA Engineer | QA report |
+| 7. Decision | Release Manager | Post-deploy checklist |
 
 Small tasks can be flagged as trivial during objective review, skipping product and design laps.
 
@@ -121,6 +128,9 @@ plans_dir: "plans"                       # default
 context:                                 # files loaded into Claude's context
   - README.md
   - CLAUDE.md
+skills:                                  # optional - per-lap skill overrides
+  qa: ["security-review"]
+  execute: ["simplify"]
 ```
 
 ## Security

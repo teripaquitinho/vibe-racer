@@ -114,6 +114,7 @@ export async function runFastenAnalysis(cwd: string): Promise<FastenAnalysisResu
     allowedTools: ["Read", "Glob", "Grep"],
     stage: "ai_objective_review",
     taskPlanPath: "",
+    lap: null,
   });
 
   if (!output) {

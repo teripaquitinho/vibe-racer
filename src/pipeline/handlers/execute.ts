@@ -1,5 +1,5 @@
 import path from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { executeMilestonePrompt } from "../../claude/prompts.js";
@@ -44,16 +44,8 @@ export async function handleExecute(ctx: TaskContext): Promise<void> {
     milestone++;
   }
 
-  // Replace the execution checkbox with the cleanup checkbox for human review
-  const finalContent = await readFile(playbookPath, "utf-8");
-  const updatedContent = finalContent.replace(
-    /^-\s*\[x\]\s*Ready to advance to Execution\s*$/im,
-    "- [ ] Ready to advance to Cleanup",
-  );
-  await writeFile(playbookPath, updatedContent, "utf-8");
-
-  updateStage(ctx.planPath, "fine_tuning");
-  log.success("All milestones complete — stage advanced to [fine_tuning]");
+  updateStage(ctx.planPath, "ai_qa");
+  log.success("All milestones complete — stage advanced to [ai_qa]");
 
   const closeHash = await commitAll(git, `vibe-racer: execution complete for #${ctx.taskNumber}`, ctx.cwd);
   if (closeHash) {
@@ -61,4 +53,6 @@ export async function handleExecute(ctx: TaskContext): Promise<void> {
   } else {
     log.dim("No changes to commit after execution");
   }
+
+  log.info(`Task #${ctx.taskNumber} is ready for QA — run 'vibe-racer drive' to start the QA lap.`);
 }

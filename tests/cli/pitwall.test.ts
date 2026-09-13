@@ -131,6 +131,32 @@ describe("pitWallCommand", () => {
     consoleSpy.mockRestore();
   });
 
+  it("renders ai_qa under agent tasks", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 5, slug: "qa-test", title: "QA test", stage: "ai_qa", planPath: "/tmp/plans/0005_qa-test" },
+    ]);
+
+    const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+    await pitWallCommand();
+
+    const logger = await import("../../src/utils/logger.js");
+    expect(logger.log.info).toHaveBeenCalledWith("Waiting on agent:");
+  });
+
+  it("renders need_decision under human tasks", async () => {
+    const { discoverTasks } = await import("../../src/state/discovery.js");
+    vi.mocked(discoverTasks).mockReturnValue([
+      { number: 6, slug: "dec-test", title: "Decision test", stage: "need_decision", planPath: "/tmp/plans/0006_dec-test" },
+    ]);
+
+    const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+    await pitWallCommand();
+
+    const logger = await import("../../src/utils/logger.js");
+    expect(logger.log.info).toHaveBeenCalledWith("Waiting on human:");
+  });
+
   it("uses singular form for 1 completed task", async () => {
     const { discoverTasks } = await import("../../src/state/discovery.js");
     vi.mocked(discoverTasks).mockReturnValue([

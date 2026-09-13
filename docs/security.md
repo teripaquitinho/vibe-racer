@@ -9,11 +9,32 @@ vibe-racer runs Claude Code sessions with autonomous permissions (`bypassPermiss
 Each pipeline stage defines which tools the agent can use:
 
 - **Review stages** (objective, product, design, plan): Read, Write (plan folder only), Glob, Grep. No Edit, no Bash.
+- **QA stage**: Read, Glob, Grep, Write (plan folder only), Bash. QA needs Bash to run the build, lint, and test commands it reports on, but is write-jailed to the plan folder so it cannot fix what it finds.
+- **Decision session**: Read, Glob, Grep, Write. No Edit, no Bash.
 - **Execution stages**: Full tool access including Edit and Bash.
 
 ### Layer 2: Tool Guard (Fine Gate)
 
-A `canUseTool` callback intercepts every tool invocation and enforces 5 rules:
+A `canUseTool` callback intercepts every tool invocation and enforces 6 rules:
+
+#### 0. `state.yml` Is Pipeline-Owned
+
+`Write` and `Edit` are denied on any file named `state.yml` under `plans_dir`, at **every**
+stage — including execution, which otherwise has full tool access. Only vibe-racer moves a
+task between stages.
+
+This rule exists because of a real incident: a review session wrote `state.yml` itself,
+guessed the stage-enum values, and produced `next: ai_plan` (no such stage). The schema
+rejected it on the next read, and the error-recovery path — which also starts by reading
+`state.yml` — died on the same corrupt file. The task was unrecoverable without hand-editing.
+
+**Limitation:** the rule is keyed on `Write`/`Edit`. A Bash redirect (`echo > state.yml`,
+`sed -i`) is not intercepted. This is a known gap, accepted because the incident was a `Write`
+call and no prompt instructs shell-writing `state.yml`.
+
+`setError` is also hardened independently: if `state.yml` cannot be parsed, it salvages what
+it can from the raw YAML, and falls back to hand-writing a minimal valid error record. The
+recovery path can no longer be taken out by the corruption it is recording.
 
 #### 1. Sensitive Path Blocklist
 
@@ -42,7 +63,11 @@ Any file matching `.env*` (`.env`, `.env.local`, `.env.production`, etc.) is den
 
 #### 4. Review-Stage Write Restriction
 
-During review stages, Write and Edit are restricted to the task's plan folder (`plans/<task>/`). This prevents the agent from modifying source code during review.
+During review stages — objective, product, design, plan, and QA — Write and Edit are restricted to the task's plan folder (`plans/<task>/`). This prevents the agent from modifying source code during review, and is what keeps the QA lap judging rather than fixing.
+
+The cleanup session is **not** plan-jailed: it legitimately updates project documentation across the repo.
+
+The decision session shares its stage (`cleanup_ready`) but writes exactly one file, so it opts into the jail explicitly via `jailToPlanDir`, a per-session flag that applies Rule 4a regardless of stage. Stage alone cannot separate two sessions that run back to back under the same stage. It is additionally constrained by its `allowedTools` (no Edit, no Bash).
 
 #### 5. Bash Command Filter
 
@@ -60,6 +85,30 @@ Both direct invocation and `/usr/bin/` form are detected.
 **Obfuscation heuristics:** Catches `eval(Buffer.from(...))` base64 encoding and `String.fromCharCode(...)` character code construction.
 
 **Special cases:** `rm -rf /` and `rm -rf ~` patterns are explicitly blocked.
+
+## Setting Sources
+
+Sessions are started with `settingSources: ["project", "user"]`, which is what makes
+project-level and user-level Claude Code skills available to each lap.
+
+This widens the trust boundary. Both scopes are loaded into a session running with
+`bypassPermissions`, which means the following are in effect during a race:
+
+- **Hooks** from `.claude/settings.json` (project) and `~/.claude/settings.json` (user) —
+  arbitrary commands that run on tool events
+- **Permission rules** from either scope
+- **MCP servers** configured in either scope
+- **`additionalDirectories`**, which can extend the reachable filesystem beyond `cwd`
+
+The `canUseTool` guard still runs on every tool invocation, so path containment, the
+sensitive-path blocklist, dotenv protection, and the bash filter apply regardless of what
+settings are loaded. But a hostile or careless entry in either settings file is now part of
+your race's trust boundary. Two consequences worth acting on:
+
+- Treat `.claude/settings.json` in a cloned repo as executable content — review it before
+  racing a project you do not control.
+- Your own `~/.claude/settings.json` applies to every project you race, not just the ones you
+  wrote it for.
 
 ## Pre-Commit Secret Scanning
 
@@ -94,6 +143,9 @@ The audit log has a 1 MB size cap. Audit write failures never break the guard (f
 | `/tmp` is an allowed write target | Network blocklist limits what can be done with data staged in `/tmp` |
 | Novel secret formats may pass the pre-commit scan | Common patterns covered; can be extended |
 | Prompt injection via project files | Guard constrains blast radius but can't prevent all injected instructions |
+| Bash can still write `state.yml` (Rule 0 covers Write/Edit only) | No prompt instructs it; the bash blocklist and audit log cover the rest |
+| Project and user settings (hooks, MCP servers, permissions) are loaded into every session | Review `.claude/settings.json` in untrusted repos; the tool guard still applies |
+| The cleanup session has repo-wide write access | Unavoidable — it is the lap that updates docs. Its output is committed on your branch and visible in `git diff` |
 
 ## Docker Recommendation
 

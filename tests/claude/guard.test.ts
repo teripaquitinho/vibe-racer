@@ -45,6 +45,7 @@ function makeGuard(overrides?: Partial<GuardOptions>) {
     cwd: "/home/testuser/project",
     stage: "ready_to_execute",
     taskPlanPath: "plans/0006_permission-review",
+    plansDir: "plans",
     ...overrides,
   });
 }
@@ -215,7 +216,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage: writes restricted to",
+        "writes restricted to",
       );
     });
 
@@ -228,7 +229,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage",
+        "writes restricted to",
       );
     });
   });
@@ -245,7 +246,7 @@ describe("createToolGuard", () => {
       );
       expect(result.behavior).toBe("deny");
       expect((result as { message: string }).message).toContain(
-        "review stage",
+        "writes restricted to",
       );
     });
   });
@@ -745,6 +746,206 @@ describe("createToolGuard", () => {
     });
   });
 
+  // ─── Rule 0: state.yml protection ─────────────────────────
+
+  describe("Rule 0 — state.yml protection", () => {
+    it("denies Write to state.yml at review stage", async () => {
+      const guard = makeGuard({ stage: "ai_product_review" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/state.yml" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("state.yml is owned by the pipeline");
+    });
+
+    it("denies Write to state.yml at execution stage", async () => {
+      const guard = makeGuard({ stage: "ready_to_execute" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/state.yml" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("state.yml is owned by the pipeline");
+    });
+
+    it("denies Edit to state.yml at ai_qa stage", async () => {
+      const guard = makeGuard({ stage: "ai_qa" });
+      const result = await guard(
+        "Edit",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/state.yml" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("state.yml is owned by the pipeline");
+    });
+
+    it("allows Write to other files in plan dir at review stage", async () => {
+      const guard = makeGuard({ stage: "ai_product_review" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/02_design.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("allows Write to state.yml outside plansDir", async () => {
+      const guard = makeGuard({ stage: "ready_to_execute" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/state.yml" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("denies state.yml under symlinked paths (macOS /tmp)", async () => {
+      // Simulate symlink: /tmp -> /private/tmp
+      mockRealpathSync.mockImplementation((p: unknown) => {
+        const s = p as string;
+        if (s.startsWith("/tmp/")) return s.replace("/tmp/", "/private/tmp/");
+        if (s === "/tmp") return "/private/tmp";
+        return s;
+      });
+      const guard = createToolGuard({
+        cwd: "/tmp/test-project",
+        stage: "ready_to_execute",
+        taskPlanPath: "plans/0001_test",
+        plansDir: "plans",
+      });
+      const result = await guard(
+        "Write",
+        { file_path: "/tmp/test-project/plans/0001_test/state.yml" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("state.yml is owned by the pipeline");
+    });
+  });
+
+  // ─── Rule 4a: ai_qa write jailing ────────────────────────
+
+  describe("Rule 4a — ai_qa write jailing", () => {
+    it("jails Write at ai_qa to plan directory", async () => {
+      const guard = makeGuard({ stage: "ai_qa" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/index.ts" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("writes restricted to");
+    });
+
+    it("allows Write to plan dir at ai_qa", async () => {
+      const guard = makeGuard({ stage: "ai_qa" });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/05_qa.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+  });
+
+  // ─── Rule 4a: per-session jail (jailToPlanDir) ───────────
+
+  describe("Rule 4a — jailToPlanDir at a stage that is not plan-jailed", () => {
+    it("denies Write outside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/index.ts" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("writes restricted to");
+    });
+
+    it("denies Edit outside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Edit",
+        { file_path: "/home/testuser/project/README.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+    });
+
+    it("allows Write inside the plan dir at cleanup_ready when the flag is set", async () => {
+      const guard = makeGuard({ stage: "cleanup_ready", jailToPlanDir: true });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/plans/0006_permission-review/06_decision.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("leaves cleanup_ready unjailed when the flag is absent", async () => {
+      // The cleanup session shares this stage and must reach docs across the repo.
+      const guard = makeGuard({ stage: "cleanup_ready" });
+      const result = await guard(
+        "Edit",
+        { file_path: "/home/testuser/project/README.md" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+
+    it("does not loosen an already-jailed stage when the flag is false", async () => {
+      const guard = makeGuard({ stage: "ai_qa", jailToPlanDir: false });
+      const result = await guard(
+        "Write",
+        { file_path: "/home/testuser/project/src/index.ts" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+    });
+  });
+
+  // ─── Rule 4b: Bash blocking ──────────────────────────────
+
+  describe("Rule 4b — Bash blocking at review stages", () => {
+    it("denies Bash at ai_objective_review", async () => {
+      const guard = makeGuard({ stage: "ai_objective_review" });
+      const result = await guard(
+        "Bash",
+        { command: "npm run test" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("deny");
+      expect((result as { message: string }).message).toContain("review stage: bash not permitted");
+    });
+
+    it("allows Bash at ai_qa", async () => {
+      const guard = makeGuard({ stage: "ai_qa" });
+      const result = await guard(
+        "Bash",
+        { command: "npm run test" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+  });
+
+  // ─── Skill tool ──────────────────────────────────────────
+
+  describe("Skill tool", () => {
+    it("explicitly allows Skill tool", async () => {
+      const guard = makeGuard();
+      const result = await guard(
+        "Skill",
+        { skill: "simplify" },
+        stubOptions,
+      );
+      expect(result.behavior).toBe("allow");
+    });
+  });
+
   // ─── Fail-closed ──────────────────────────────────────────
 
   describe("fail-closed", () => {
@@ -796,7 +997,7 @@ describe("formatGuardSummary", () => {
       "Write",
     ]);
     expect(result).toBe(
-      "Guard: path-jail to ./  ·  tools: [Read, Glob, Grep, Write]  ·  bash: blocked (review stage)",
+      "Guard: path-jail to ./<plan>  ·  tools: [Read, Glob, Grep, Write]  ·  bash: blocked (review stage)",
     );
   });
 
@@ -812,5 +1013,18 @@ describe("formatGuardSummary", () => {
     expect(result).toMatch(
       /Guard: path-jail to \.\/  ·  tools: \[Read, Glob, Grep, Write, Edit, Bash\]  ·  bash: \d+ commands blocked/,
     );
+  });
+
+  it("reports the plan jail when jailToPlanDir is set at an unjailed stage", () => {
+    // The banner must mirror Rule 4a, or it tells the operator writes are repo-wide
+    // while the guard is denying them.
+    const result = formatGuardSummary("cleanup_ready", ["Read", "Glob", "Grep", "Write"], true);
+    expect(result).toContain("path-jail to ./<plan>");
+  });
+
+  it("reports no plan jail at cleanup_ready without the flag", () => {
+    const result = formatGuardSummary("cleanup_ready", ["Read", "Glob", "Grep", "Write"]);
+    expect(result).toContain("path-jail to ./ ");
+    expect(result).not.toContain("<plan>");
   });
 });

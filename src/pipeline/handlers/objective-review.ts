@@ -1,9 +1,10 @@
 import path from "path";
+import { existsSync } from "node:fs";
 import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { objectiveReviewPrompt } from "../../claude/prompts.js";
 import { commitAll, createGit } from "../../git/operations.js";
-import { readState, updateStage } from "../../state/store.js";
+import { readState, updateStage, writeState } from "../../state/store.js";
 import { log } from "../../utils/logger.js";
 
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write"];
@@ -21,8 +22,13 @@ export async function handleObjectiveReview(ctx: TaskContext): Promise<void> {
     taskPlanPath: ctx.planPath,
   });
 
-  const updatedState = readState(path.resolve(ctx.cwd, ctx.planPath));
-  if (updatedState.trivial === true) {
+  const planQuestionsPath = path.join(ctx.cwd, ctx.planPath, "03_plan_questions.md");
+  const productQuestionsPath = path.join(ctx.cwd, ctx.planPath, "01_product_questions.md");
+
+  if (existsSync(planQuestionsPath) && !existsSync(productQuestionsPath)) {
+    // Agent signaled triviality by writing plan questions directly
+    const state = readState(path.resolve(ctx.cwd, ctx.planPath));
+    writeState(path.resolve(ctx.cwd, ctx.planPath), { ...state, trivial: true });
     updateStage(ctx.planPath, "need_plan");
     log.info("Task classified as trivial — skipping product and design stages");
   } else {

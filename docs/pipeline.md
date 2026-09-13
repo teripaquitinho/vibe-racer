@@ -1,9 +1,10 @@
-# The Five Laps
+# The Seven Laps
 
-vibe-racer races every task through 5 laps, producing 5 documents:
+vibe-racer races every task through 7 laps, producing 7 documents:
 
 ```
-00_objective.md -> 01_product.md -> 02_design.md -> 03_plan.md -> 04_execute.md
+00_objective.md -> 01_product.md -> 02_design.md -> 03_plan.md ->
+04_execute.md -> 05_qa.md -> 06_decision.md
 ```
 
 Each lap has a pit stop (human review) and a race engineer phase (AI analyze/generate).
@@ -97,19 +98,55 @@ Progress is tracked in `04_execute.md` with checkboxes for each milestone.
 
 ---
 
-## Finish Line: Wrap-up
+## Lap 6: QA
 
-### Pit stop: Manual tweaks (`fine_tuning`)
+### Race engineer: Review the work (`ai_qa`)
 
-Perform any manual adjustments. Tick the checkbox when ready for cleanup.
+Execution does not hand straight to cleanup. The race engineer re-reads the task as a **Senior QA Engineer**, scopes itself to `git diff main...HEAD`, and writes `05_qa.md`:
 
-### Race engineer: Final cleanup (`cleanup_ready`)
+- **What works** — each acceptance criterion, with the verification command and its output
+- **What doesn't** — gaps between the plan and the implementation
+- **What regressed** — full test suite output
+- **Deviations** — where execution departed from the plan, and whether that was sound
+- **Risks and known limitations** — these feed the decision checklist in Lap 7
+- **Verification run** — build, lint, tests, pasted verbatim
 
-Updates project documentation (README, CLAUDE.md), runs final build/lint/test, commits.
+The QA session judges, it does not fix. It is write-jailed to the plan folder and cannot touch source.
+
+**Its subject is the code.** QA runs *before* the cleanup lap, so project documentation is expected to be stale at this point — reporting it would be reporting work that is scheduled rather than missed. The exception is documentation the plan made a deliverable: an acceptance criterion or a milestone task. Those are execution scope, and QA names the criterion when it reports one.
+
+**Output:** QA report.
+
+### Pit stop: Act on the findings (`fine_tuning`)
+
+Read `05_qa.md`. Fix what needs fixing, accept what you're willing to accept. Tick `- [x] Ready to advance to Cleanup` in `05_qa.md` when the report no longer blocks you.
+
+**Re-running QA after fixes.** If you fixed enough that the report is stale, you can race the QA lap again: set `stage: ai_qa` in `state.yml` by hand and run `drive`. Rule 0 denies `state.yml` to the *agent*, but it remains the operator's file — this is a supported escape hatch, not a workaround. The next QA session overwrites `05_qa.md` against the current diff.
+
+---
+
+## Lap 7: Decision
+
+### Race engineer: Cleanup + decision checklist (`cleanup_ready`)
+
+Two sessions run back to back:
+
+1. **Cleanup** — updates project documentation (README, CLAUDE.md), runs final build/lint/test, commits.
+2. **Decision** — as a **Release Manager**, jailed to the plan folder, writes `06_decision.md`: a checklist of everything that must be verified *after deploy* before the task counts as delivered. Every item is concretely checkable and traced to the objective, an acceptance criterion, or a QA risk. Accepted residual risks appear as named items so you sign off on them knowingly.
+
+**Output:** Cleaned-up repo + post-deploy checklist.
+
+### Pit stop: Work the checklist (`need_decision`)
+
+Work through `06_decision.md` and tick every item. This gate is enforced: if any `- [ ]` remains anywhere in the file, `drive` reports the unworked lines, unticks the completion checkbox, and refuses to advance.
 
 ### Done (`done`)
 
-Terminal state. Merge the branch manually when ready.
+Terminal state. Ticking the last checkbox advances the task and makes a final commit on the
+task branch (`vibe-racer: task #N complete`) — this is the one that captures your worked
+checklist and the `stage: done` write, since no lap follows to sweep them up.
+
+Merge the branch manually when ready. vibe-racer never pushes.
 
 ---
 
@@ -152,7 +189,11 @@ Stages progress linearly:
 ```
 need_objective -> ai_objective_review -> need_product -> ai_product_review ->
 need_design -> ai_design_review -> need_plan -> ai_plan_review ->
-need_execution -> ready_to_execute -> fine_tuning -> cleanup_ready -> done
+need_execution -> ready_to_execute -> ai_qa -> fine_tuning ->
+cleanup_ready -> need_decision -> done
 ```
+
+`state.yml` is owned by the pipeline. The guard denies `Write` and `Edit` to any `state.yml`
+under `plans_dir`, at every stage — only vibe-racer itself moves a task between stages.
 
 The `error` state can be entered from any race engineer phase if the session fails. Use `vibe-racer drive --retry` to reprocess.

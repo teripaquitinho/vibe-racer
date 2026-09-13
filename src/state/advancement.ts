@@ -7,12 +7,13 @@ import {
   hasCompletionMarker,
   removeCompletionMarker,
   validateAnswers,
+  validateDecisionChecklist,
 } from "../pipeline/validation.js";
 import { log } from "../utils/logger.js";
 
 interface AdvancementResult {
   advanced: boolean;
-  reason: "no_questions_file" | "no_marker" | "incomplete_answers" | "advanced";
+  reason: "no_questions_file" | "no_marker" | "incomplete_answers" | "incomplete_checklist" | "advanced";
 }
 
 export async function tryAdvance(
@@ -41,6 +42,18 @@ export async function tryAdvance(
       `Incomplete answers in ${questionsFile}:\n${validation.unanswered.map((q) => `  - ${q}`).join("\n")}`,
     );
     return { advanced: false, reason: "incomplete_answers" };
+  }
+
+  if (currentStage === "need_decision") {
+    const checklist = validateDecisionChecklist(filePath);
+    if (!checklist.valid) {
+      removeCompletionMarker(filePath);
+      log.warn(`Decision checklist has ${checklist.unchecked.length} unworked item(s):`);
+      for (const item of checklist.unchecked) {
+        log.warn(`  line ${item.line}: ${item.text}`);
+      }
+      return { advanced: false, reason: "incomplete_checklist" };
+    }
   }
 
   const next = nextStage(currentStage);

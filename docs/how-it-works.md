@@ -32,14 +32,19 @@ Each task has a `state.yml` file tracking its current stage. The state machine i
 ```
 need_objective -> ai_objective_review -> need_product -> ai_product_review ->
 need_design -> ai_design_review -> need_plan -> ai_plan_review ->
-need_execution -> ready_to_execute -> fine_tuning -> cleanup_ready -> done
+need_execution -> ready_to_execute -> ai_qa -> fine_tuning ->
+cleanup_ready -> need_decision -> done
 ```
 
-- **`need_*` stages**: Pit stops. Write content, review answers, tick checkbox.
-- **`ai_*` stages**: Race engineer phases. Claude Code session runs automatically.
-- **`error`**: Entered on race engineer failure. Use `--retry` to reprocess.
+- **Pit stops** (`need_*`, plus `fine_tuning`): Write content, review answers, tick checkbox.
+- **Race engineer phases** (`ai_*`, plus `ready_to_execute` and `cleanup_ready`): Claude Code session runs automatically.
+- **`error`**: Entered on race engineer failure. The failing stage is recorded in `error_stage`; `--retry` restores it and dispatches that handler again.
 
 The `prev` and `next` fields in `state.yml` are auto-computed on write for navigation.
+
+`state.yml` is pipeline-owned. Guard Rule 0 denies `Write` and `Edit` to any `state.yml`
+under `plans_dir` at every stage, so a session can never advance itself or hand-author a
+stage name. Every transition goes through `updateStage`, which validates against the enum.
 
 ## Claude Code Sessions
 
@@ -50,9 +55,12 @@ Each race engineer phase runs a Claude Code SDK session with:
   - **Senior Product Designer** for objective and product review
   - **Software Architect** for design review
   - **Software Engineer** for plan review and execution
+  - **Senior QA Engineer** for the QA lap
+  - **Release Manager** for the decision checklist
 - **Context files**: Loaded from the `context` array in `.vibe-racer.yml` (default: README.md, CLAUDE.md)
 - **Streaming**: Output is streamed to the terminal in real-time
 - **Guard**: `canUseTool` callback enforces security rules on every tool invocation
+- **Skills**: Each agent stage maps to a lap (`LAP_BY_STAGE`), and each lap resolves to a list of Claude Code skills. Installed skills are probed once per session; missing names warn and are skipped, and a failed probe degrades to persona-only rather than failing the lap. See [Configuration](/configuration#skills).
 
 ## Advancement Logic
 
@@ -61,8 +69,14 @@ When you run `vibe-racer drive`, the following happens:
 1. **Scan for ticked checkboxes**: All pit-stop tasks are checked for `- [x] Ready to advance to ...`
 2. **Validate answers**: If the file has `**Answer:**` sections, all must be filled in (not blank)
 3. **Advance**: If checkbox is ticked and answers are complete, the task advances to the next lap
-4. **Find actionable tasks**: Tasks at race engineer phases are eligible for processing
-5. **Dispatch**: The correct handler runs based on the current stage
+4. **Enforce the decision checklist**: At `need_decision`, any remaining `- [ ]` in `06_decision.md` blocks advancement — the unworked lines are printed and the completion checkbox is unticked
+5. **Find actionable tasks**: Tasks at race engineer phases are eligible for processing
+6. **Dispatch**: The correct handler runs based on the current stage
+
+Advancement is keyed on one file per stage: `00_objective.md`, `01_product_questions.md`,
+`02_design_questions.md`, `03_plan_questions.md`, `04_execute.md`, `05_qa.md`,
+`06_decision.md`. No two stages share a file — a stale tick left in an earlier lap's
+document cannot advance a later one.
 
 ## Follow-up Detection
 
@@ -113,3 +127,15 @@ During the execution lap (`ready_to_execute`), the race engineer processes miles
 6. Repeat until all milestones are done
 
 No human intervention between milestones. The full execution runs in a single session.
+
+When the last milestone lands, the task advances to `ai_qa` rather than straight to cleanup.
+
+## QA and Decision
+
+Two sessions close out a task:
+
+- **QA (`ai_qa`)** — a QA Engineer session scoped to `git diff main...HEAD` writes `05_qa.md`: what works, what doesn't, what regressed, deviations, risks, and a verbatim verification run. It is write-jailed to the plan folder, so it judges without fixing. Because it runs before cleanup, it reviews the code and leaves project-documentation freshness to the cleanup lap — unless the plan made a doc an acceptance criterion. If the session does not produce `05_qa.md`, the handler throws rather than advancing — an unwritten report would otherwise strand the task at a pit stop with no file to tick.
+- **Decision (`cleanup_ready`)** — the cleanup session runs first (docs, final build/lint/test, commit), then a Release Manager session writes `06_decision.md`, the post-deploy checklist. Same guard: no file, no advancement.
+
+Both handlers append the completion checkbox only if the document does not already carry one,
+so a session that writes its own "# Complete" section cannot leave two checkboxes behind.

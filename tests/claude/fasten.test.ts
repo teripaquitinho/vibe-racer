@@ -100,7 +100,7 @@ describe("runFastenAnalysis", () => {
     );
   });
 
-  it("calls runAndStream with stage ai_objective_review and empty taskPlanPath", async () => {
+  it("calls runAndStream with stage ai_objective_review, empty taskPlanPath, and lap: null", async () => {
     mockRunAndStream.mockResolvedValue(fixtureWithFindings);
     const { runFastenAnalysis } = await loadModule();
     await runFastenAnalysis("/tmp/project");
@@ -109,6 +109,7 @@ describe("runFastenAnalysis", () => {
       expect.objectContaining({
         stage: "ai_objective_review",
         taskPlanPath: "",
+        lap: null,
       }),
     );
   });

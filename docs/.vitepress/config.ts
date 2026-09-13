@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "vibe-racer",
-  description: "Your AI race engineer — five laps from objective to shipped code",
+  description: "Your AI race engineer — seven laps from objective to shipped code",
   base: "/vibe-racer/",
   head: [["link", { rel: "icon", href: "/vibe-racer/logo-squared.png" }]],
   themeConfig: {
@@ -29,7 +29,7 @@ export default defineConfig({
       {
         text: "Guide",
         items: [
-          { text: "The Five Laps", link: "/pipeline" },
+          { text: "The Seven Laps", link: "/pipeline" },
           { text: "How It Works", link: "/how-it-works" },
           { text: "Security", link: "/security" },
         ],

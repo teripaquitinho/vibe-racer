@@ -12,6 +12,8 @@ import {
   executeMilestonePrompt,
   donePrompt,
   chatPrompt,
+  qaPrompt,
+  decisionPrompt,
 } from "../../src/claude/prompts.js";
 import type { TaskContext } from "../../src/pipeline/types.js";
 
@@ -341,9 +343,9 @@ describe("chatPrompt", () => {
     expect(systemPrompt).toContain(PERSONAS.softwareEngineer);
   });
 
-  it("returns softwareEngineer persona for fine_tuning", () => {
+  it("returns qaEngineer persona for fine_tuning (updated in M5a)", () => {
     const { systemPrompt } = chatPrompt(CTX, "fine_tuning");
-    expect(systemPrompt).toContain(PERSONAS.softwareEngineer);
+    expect(systemPrompt).toContain(PERSONAS.qaEngineer);
   });
 
   it("system prompt contains 'do not produce full pipeline artifacts' for non-fine-tuning stages", () => {
@@ -381,5 +383,139 @@ describe("chatPrompt", () => {
   it("system prompt for fine_tuning contains 'small coding changes'", () => {
     const { systemPrompt } = chatPrompt(CTX, "fine_tuning");
     expect(systemPrompt).toContain("small coding changes");
+  });
+
+  it("returns qaEngineer persona for fine_tuning", () => {
+    const { systemPrompt } = chatPrompt(CTX, "fine_tuning");
+    expect(systemPrompt).toContain(PERSONAS.qaEngineer);
+  });
+
+  it("returns releaseManager persona for need_decision", () => {
+    const { systemPrompt } = chatPrompt(CTX, "need_decision");
+    expect(systemPrompt).toContain(PERSONAS.releaseManager);
+  });
+});
+
+describe("qaPrompt", () => {
+  it("includes adversarial framing", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("YOUR JOB IS TO FIND PROBLEMS");
+    expect(prompt).toMatch(/red\s+flag, not a success/);
+  });
+
+  it("includes all six mandatory sections", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("**What works**");
+    expect(prompt).toContain("**What doesn't**");
+    expect(prompt).toContain("**What regressed**");
+    expect(prompt).toContain("**Deviations**");
+    expect(prompt).toContain("**Risks and known limitations**");
+    expect(prompt).toContain("**Verification run**");
+  });
+
+  it("includes git diff scoping instruction", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("git diff --stat main...HEAD");
+    expect(prompt).toContain("git log --oneline main..HEAD");
+  });
+
+  it("references context files: objective, plan, execute", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("00_objective.md");
+    expect(prompt).toContain("03_plan.md");
+    expect(prompt).toContain("04_execute.md");
+  });
+
+  it("instructs to write 05_qa.md", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("05_qa.md");
+  });
+
+  it("uses qaEngineer persona", () => {
+    const { persona } = qaPrompt(CTX);
+    expect(persona).toBe(PERSONAS.qaEngineer);
+  });
+
+  it("includes rule: do not fix issues", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("Do NOT fix any issues you find");
+  });
+
+  it("does not reference the deleted vibe-racer-fix.md handoff note", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).not.toContain("vibe-racer-fix.md");
+  });
+
+  it("forbids authoring the completion section", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("Do NOT add a \"# Complete\" section");
+  });
+
+  it("includes diff fallback clause", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("Fall back to reviewing every");
+  });
+
+  it("scopes the review to code and defers doc freshness to the cleanup lap", () => {
+    const { prompt } = qaPrompt(CTX);
+    expect(prompt).toContain("BEFORE the cleanup lap");
+    expect(prompt).toContain("do NOT report stale or missing project documentation");
+    // The carve-out matters as much as the rule: a doc item the plan made an acceptance
+    // criterion is execution scope, and QA must still catch it.
+    expect(prompt).toContain("One exception");
+  });
+});
+
+describe("decisionPrompt", () => {
+  it("references 06_decision.md", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("06_decision.md");
+  });
+
+  it("asks for flat top-level checkboxes", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("flat, top-level");
+    expect(prompt).toContain("- [ ]");
+  });
+
+  it("forbids authoring the completion section", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("Do NOT add a \"# Complete\" section");
+  });
+
+  it("references context files: objective, plan, qa", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("00_objective.md");
+    expect(prompt).toContain("03_plan.md");
+    expect(prompt).toContain("05_qa.md");
+  });
+
+  it("uses releaseManager persona", () => {
+    const { persona } = decisionPrompt(CTX);
+    expect(persona).toBe(PERSONAS.releaseManager);
+  });
+
+  it("mentions residual risks", () => {
+    const { prompt } = decisionPrompt(CTX);
+    expect(prompt).toContain("residual risk");
+  });
+});
+
+describe("chatPrompt — need_decision persona", () => {
+  it("CHAT_PERSONA_MAP['need_decision'] resolves to releaseManager", () => {
+    const { systemPrompt } = chatPrompt(CTX, "need_decision");
+    expect(systemPrompt).toContain(PERSONAS.releaseManager);
+  });
+});
+
+describe("PERSONAS", () => {
+  it("has qaEngineer persona", () => {
+    expect(PERSONAS.qaEngineer).toContain("QA Engineer");
+    expect(PERSONAS.qaEngineer).toContain("judge");
+  });
+
+  it("has releaseManager persona", () => {
+    expect(PERSONAS.releaseManager).toContain("Release Manager");
+    expect(PERSONAS.releaseManager).toContain("post-deploy");
   });
 });

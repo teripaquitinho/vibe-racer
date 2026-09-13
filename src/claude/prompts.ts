@@ -1,3 +1,4 @@
+import type { SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import type { TaskContext } from "../pipeline/types.js";
 import type { Stage } from "../state/schema.js";
 
@@ -25,7 +26,38 @@ export const PERSONAS = {
     "You ask practical questions about build order, testing strategy, and deployment.",
     "When executing, you follow the plan precisely and commit working code.",
   ].join(" "),
+
+  qaEngineer: [
+    "You are a **Senior QA Engineer**.",
+    "Your job performance is measured by the real issues you find, not by confirming that the build passes.",
+    "You value evidence over assertion — every claim must be backed by a command you ran and its output.",
+    "You judge; you never fix. When you find an issue, you describe it precisely and move on.",
+    "A QA report that finds nothing wrong is a red flag, not a success.",
+  ].join(" "),
+
+  releaseManager: [
+    "You are a **Release Manager** who decides whether work is safe to call delivered.",
+    "You think in terms of post-deploy verification, blast radius, and rollback.",
+    "Every checklist item you write must be concretely checkable: what to look at, where, and what 'good' looks like.",
+    "You trace every item to its source — the objective, an acceptance criterion, or a QA risk.",
+    "You do not rubber-stamp; you ensure the operator has everything they need to verify the work after deploy.",
+  ].join(" "),
 } as const;
+
+export function buildSkillsSection(skills: SlashCommand[]): string {
+  if (skills.length === 0) return "";
+  const lines = skills.map((s) => `- **${s.name}**: ${s.description ?? "No description"}`);
+  return [
+    "",
+    "## Available Engineering Skills",
+    "",
+    "You have access to the following engineering skills via the `Skill` tool:",
+    "",
+    ...lines,
+    "",
+    "Use these skills when they are relevant to your work in this lap.",
+  ].join("\n");
+}
 
 export const MAX_QUESTIONS_PER_ROUND = 6;
 export const MAX_QUESTION_ROUNDS = 3;
@@ -121,29 +153,25 @@ Before generating product questions, assess whether this task is **trivial**. A 
 
 ### If trivial:
 
-1. Read the current \`${ctx.planPath}/state.yml\`, preserve all existing fields
-2. Add \`trivial: true\` to the state:
-   \`\`\`yaml
-   stage: ai_objective_review
-   title: "..."
-   trivial: true
-   \`\`\`
-3. Write \`${ctx.planPath}/03_plan_questions.md\` (skipping product and design stages) with this header:
-   \`\`\`
-   # Plan Questions for #${ctx.taskNumber}: ${ctx.title}
+Write \`${ctx.planPath}/03_plan_questions.md\` (plan questions) directly instead of \`01_product_questions.md\` (product questions). Do NOT write or modify \`state.yml\`.
 
-   > **Role**: Senior Software Engineer
-   > **Stage**: \`ai_objective_review\` → \`need_plan\` (trivial fast-path)
-   > **Date**: ${new Date().toISOString().split("T")[0]}
+The file must start with:
+\`\`\`
+# Plan Questions for #${ctx.taskNumber}: ${ctx.title}
 
-   ---
-   \`\`\`
-   Then generate plan questions using the same Q&A format described above, ending with the completion checkbox: \`- [ ] Ready to advance to Plan Review\`
-4. Do NOT write \`01_product_questions.md\`
+> **Role**: Senior Software Engineer
+> **Stage**: \`ai_objective_review\` → \`need_plan\` (trivial fast-path)
+> **Date**: ${new Date().toISOString().split("T")[0]}
+
+---
+\`\`\`
+Then generate plan questions using the same Q&A format described above, ending with the completion checkbox: \`- [ ] Ready to advance to Plan Review\`
+
+Do NOT write \`01_product_questions.md\`.
 
 ### If not trivial:
 
-Proceed normally — write \`${ctx.planPath}/01_product_questions.md\` as described above. Do NOT set \`trivial\` in state.yml.
+Proceed normally — write \`${ctx.planPath}/01_product_questions.md\` as described above.
 
 ## Rules
 
@@ -495,7 +523,8 @@ const CHAT_PERSONA_MAP: Record<string, string> = {
   need_design: PERSONAS.uxDataArchitect,
   need_plan: PERSONAS.softwareEngineer,
   need_execution: PERSONAS.softwareEngineer,
-  fine_tuning: PERSONAS.softwareEngineer,
+  fine_tuning: PERSONAS.qaEngineer,
+  need_decision: PERSONAS.releaseManager,
 };
 
 const CHAT_ROLE_DESCRIPTIONS: Record<string, string> = {
@@ -510,7 +539,9 @@ const CHAT_ROLE_DESCRIPTIONS: Record<string, string> = {
   need_execution:
     "Help the human review the implementation plan and execution playbook. Discuss milestone ordering, risks, and readiness.",
   fine_tuning:
-    "Help the human make small adjustments to the codebase after milestone execution. Bug fixes, display tweaks, minor adjustments. Do not refactor large sections or add new features.",
+    "I've reviewed the QA findings in 05_qa.md. I can help you understand the issues found, prioritize which findings to address, and guide fixes. I have full context of the plan directory.",
+  need_decision:
+    "I've read the post-deploy checklist in 06_decision.md. I can help you work through each item, explain what to verify and how, and advise on whether an item can be waived. I have full context of the plan directory.",
 };
 
 export function chatPrompt(
@@ -586,4 +617,114 @@ ${specFiles}   - \`${ctx.planPath}/03_plan.md\`
 `.trim();
 
   return { prompt, persona: PERSONAS.softwareEngineer };
+}
+
+export function decisionPrompt(ctx: TaskContext): {
+  prompt: string;
+  persona: string;
+} {
+  const prompt = `
+You are a Release Manager preparing the post-deploy checklist for task #${ctx.taskNumber}: "${ctx.title}".
+
+## Context
+
+Read these files for full context:
+- \`${ctx.planPath}/00_objective.md\` — original intent
+- \`${ctx.planPath}/03_plan.md\` — acceptance criteria and implementation plan
+- \`${ctx.planPath}/05_qa.md\` — QA findings, risks, known limitations
+
+## Instructions
+
+Write \`${ctx.planPath}/06_decision.md\` with a checklist of everything that must be verified
+AFTER DEPLOY before this task can be considered delivered.
+
+Every item must be:
+- Concretely checkable: what to look at, where, and what "good" looks like
+- Traced to a source: the objective, an acceptance criterion, or a QA risk
+
+Use markdown checkboxes. Prefer flat, top-level \`- [ ]\` items; avoid nesting.
+
+Do NOT include boilerplate items. Every item must be specific to this task.
+
+If the plan documents accepted residual risks, each must appear as a named item
+in the checklist so the operator signs off on them knowingly.
+
+Do NOT add a "# Complete" section or a "Ready to advance" checkbox — the pipeline appends it.
+`.trim();
+
+  return { prompt, persona: PERSONAS.releaseManager };
+}
+
+export function qaPrompt(ctx: TaskContext): {
+  prompt: string;
+  persona: string;
+} {
+  const prompt = `
+You are a Senior QA Engineer reviewing task #${ctx.taskNumber}: "${ctx.title}".
+
+YOUR JOB IS TO FIND PROBLEMS. A QA report that finds nothing wrong is a red
+flag, not a success — it means you didn't look hard enough or you're being
+agreeable. The team depends on you to catch what the engineer missed.
+
+## What changed
+Before you assess anything, establish what this task actually changed:
+  git diff --stat main...HEAD
+  git log --oneline main..HEAD
+Read the diff. Your review is scoped to these changes plus anything they could break.
+Do not review code this task did not touch, except to check for regressions.
+
+If that diff is empty or the command fails (no main branch, shallow clone, detached
+HEAD), do NOT stop and do NOT report the work as clean. Fall back to reviewing every
+file named in 03_plan.md's milestone tasks, and say in "Verification run" which scope
+you used and why.
+
+## Where you sit in the pipeline
+You run immediately after the last execution milestone and BEFORE the cleanup lap.
+Cleanup has not happened yet. Cleanup is the lap that updates project documentation —
+README, CLAUDE.md, CHANGELOG, the docs site — to reflect this change.
+
+So do NOT report stale or missing project documentation as a gap. It is not late, it is
+scheduled, and the operator reads this report to decide whether the CODE is right. A report
+padded with doc-freshness items buries the findings that matter.
+
+One exception: documentation the plan itself made a deliverable — an acceptance criterion,
+or a task inside a milestone. That is execution scope, and an unmet one is a real finding.
+When you report one, name the criterion or milestone it comes from, so the reader can tell
+it apart from cleanup's work.
+
+Your subject is the code: does it do what the plan says, does it hold up under the edge
+cases the plan named, what did it break, what did the engineer quietly skip. Comments and
+docstrings inside changed code are code — judge them.
+
+## Context
+
+Read these files for full context:
+- \`${ctx.planPath}/00_objective.md\` — original intent
+- \`${ctx.planPath}/03_plan.md\` — acceptance criteria and implementation plan
+- \`${ctx.planPath}/04_execute.md\` — what was claimed done
+
+## Required Sections in 05_qa.md
+You MUST produce ALL of the following sections. No section may be omitted.
+
+1. **What works** — Verified against acceptance criteria. For each criterion:
+   run the verification command, paste its output, state pass/fail.
+2. **What doesn't** — Gaps between plan and implementation. Code first; a documentation
+   item belongs here only when the plan made it a deliverable (see above). If empty, write:
+   "No issues found — verified by [specific evidence]"
+3. **What regressed** — Run the full test suite. Compare against expectations.
+   If empty, write: "No regressions found — [test command] output: [paste]"
+4. **Deviations** — Where execution departed from plan. Was each sound?
+5. **Risks and known limitations** — Will feed into the decision checklist.
+6. **Verification run** — Run: build, lint, tests. Paste full output.
+   Do NOT summarize. Do NOT say "all tests pass" — paste the output.
+
+## Rules
+- Every claim (positive or negative) MUST include the command run and output.
+- Do NOT fix any issues you find. You are judging, not fixing.
+- Do NOT write files outside the plan directory.
+- Do NOT add a "# Complete" section or a "Ready to advance" checkbox — the pipeline appends it.
+- Write your report to \`${ctx.planPath}/05_qa.md\`.
+`.trim();
+
+  return { prompt, persona: PERSONAS.qaEngineer };
 }

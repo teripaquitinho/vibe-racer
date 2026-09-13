@@ -4,7 +4,7 @@ layout: home
 hero:
   name: vibe-racer
   text: Your AI race engineer
-  tagline: Five laps from objective to shipped code — you call the pit stops.
+  tagline: Seven laps from objective to shipped code — you call the pit stops.
   image:
     light: /logo-squared.png
     dark: /logo-squared-white.png
@@ -18,14 +18,14 @@ hero:
       link: https://github.com/teripaquitinho/vibe-racer
 
 features:
-  - title: Five Laps
-    details: Every task races through objective, product, design, plan, and execution. No more jumping straight to code.
+  - title: Seven Laps
+    details: Every task races through objective, product, design, plan, execution, QA, and decision. No more jumping straight to code.
   - title: Pit Stops
     details: You approve every lap transition with a checkbox. The race engineer does the heavy lifting, you keep control.
   - title: Pre-filled Answers
     details: The race engineer recommends answers to every question. You only edit what you disagree with.
   - title: Role-Based Personas
-    details: Product Designer, Software Architect, Software Engineer — the right expertise at each lap.
+    details: Product Designer, Software Architect, Software Engineer, QA Engineer, Release Manager — the right expertise at each lap.
   - title: Security-First
     details: Path containment, bash blocklist, secret scanning, audit logging. A strong guardrail on every session.
   - title: Git-Native
@@ -59,7 +59,7 @@ Three commands to your first AI-assisted development cycle. [Full guide here](/g
 
 ### 1. What it is
 
-vibe-racer is an AI-powered development pipeline that races tasks through five laps: objective, product, design, plan, and execution. It uses Claude Code sessions with specialized personas at each lap to produce structured, high-quality software.
+vibe-racer is an AI-powered development pipeline that races tasks through seven laps: objective, product, design, plan, execution, QA, and decision. It uses Claude Code sessions with specialized personas at each lap to produce structured, high-quality software.
 
 ### 2. The problem
 
@@ -67,7 +67,7 @@ LLMs generate code without product thinking. There's no requirements gathering, 
 
 ### 3. The solution
 
-A 5-lap pipeline that forces proper software development process before a single line of code is written. The race engineer does the heavy lifting at each lap — generating specs, asking questions, writing plans — while you retain control at every pit stop.
+A 7-lap pipeline that forces proper software development process before a single line of code is written — and does not call the work done when the code compiles. The race engineer does the heavy lifting at each lap — generating specs, asking questions, writing plans, QA-ing its own output — while you retain control at every pit stop.
 
 ### 4. Pit stops by design
 
@@ -75,7 +75,7 @@ You approve every lap transition via a simple checkbox. No black-box automation.
 
 ### 5. Role-based AI personas
 
-Each lap uses a specialized persona for higher quality output. A Senior Product Designer handles objective and product review. A Software Architect handles design. A Software Engineer handles planning and execution. The right expertise at the right lap.
+Each lap uses a specialized persona for higher quality output. A Senior Product Designer handles objective and product review. A Software Architect handles design. A Software Engineer handles planning and execution. A Senior QA Engineer reviews the finished work, and a Release Manager writes the post-deploy checklist. The right expertise at the right lap.
 
 ### 6. Security-first
 

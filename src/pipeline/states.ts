@@ -6,6 +6,7 @@ const AGENT_STAGES = new Set<Stage>([
   "ai_design_review",
   "ai_plan_review",
   "ready_to_execute",
+  "ai_qa",
   "cleanup_ready",
 ]);
 
@@ -37,7 +38,8 @@ export const STAGE_QUESTIONS_FILE: Partial<Record<Stage, string>> = {
   need_design: "02_design_questions.md",
   need_plan: "03_plan_questions.md",
   need_execution: "04_execute.md",
-  fine_tuning: "04_execute.md",
+  fine_tuning: "05_qa.md",
+  need_decision: "06_decision.md",
 };
 
 export const STAGE_NEXT_NAME: Partial<Record<Stage, string>> = {
@@ -47,4 +49,5 @@ export const STAGE_NEXT_NAME: Partial<Record<Stage, string>> = {
   need_plan: "Plan Review",
   need_execution: "Execution",
   fine_tuning: "Cleanup",
+  need_decision: "Done",
 };
