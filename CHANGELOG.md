@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-13
+
 ### Added
 
 - **QA lap (`ai_qa` -> `fine_tuning`)** — after the last execution milestone, a Senior QA Engineer session scoped to `git diff main...HEAD` writes `05_qa.md`: what works, what doesn't, what regressed, deviations, risks, and a verbatim verification run. Write-jailed to the plan folder, so it judges without fixing
