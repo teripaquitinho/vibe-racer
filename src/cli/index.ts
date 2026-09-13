@@ -6,6 +6,7 @@ import { driveCommand } from "./drive.js";
 import { radioCommand } from "./radio.js";
 import { fastenCommand } from "./fasten.js";
 import { log } from "../utils/logger.js";
+import pkg from "../../package.json" with { type: "json" };
 
 function wrapAction<T extends (...args: never[]) => Promise<void>>(fn: T): T {
   return (async (...args: Parameters<T>) => {
@@ -25,7 +26,7 @@ export function createProgram(): Command {
   program
     .name("vibe-racer")
     .description("Your AI race engineer — seven laps from objective to shipped code")
-    .version("0.3.0");
+    .version(pkg.version);
 
   program
     .command("init")
