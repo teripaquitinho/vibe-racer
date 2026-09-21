@@ -1,0 +1,1 @@
+One process note: the QA ran probe tests inside vibe-racer/0013_add-search-segment/ and deleted them afterwards. The tree is clean and git status is empty, so nothing leaked, but a scratch directory outside the repo would be safer next time.

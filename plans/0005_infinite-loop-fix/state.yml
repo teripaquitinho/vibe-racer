@@ -1,0 +1,6 @@
+stage: need_product
+title: infinite-loop-fix
+created: 2026-09-17T21:33:34.606Z
+updated: 2026-09-21T10:52:34.016Z
+prev: ai_objective_review
+next: ai_product_review
