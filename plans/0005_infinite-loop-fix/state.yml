@@ -1,6 +1,6 @@
-stage: ai_design_review
+stage: need_plan
 title: infinite-loop-fix
 created: 2026-09-17T21:33:34.606Z
-updated: 2026-09-21T12:19:31.487Z
-prev: need_design
-next: need_plan
+updated: 2026-09-21T14:57:54.442Z
+prev: ai_design_review
+next: ai_plan_review

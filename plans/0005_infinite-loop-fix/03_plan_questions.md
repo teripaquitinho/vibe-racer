@@ -19,7 +19,8 @@ security-declaration work sit.
 
 ### Q1: What are the milestones, and in what order do they land?
 
-`02_design.md` touches eleven source files across four layers. The plan lap has to turn that into
+`02_design.md` touches thirteen source files across five layers (`pipeline`, `state`, `claude`,
+`git`, `cli`). The plan lap has to turn that into
 milestones small enough for one session each, every one ending green. There is an obvious
 temptation to lead with `handleExecute` — it is the bug — and an obvious risk in doing so. What
 is the milestone list and its ordering rule?
