@@ -34,7 +34,10 @@ The module exports:
 - `MILESTONE_STATUSES = ["pending", "in_progress", "done", "needs_operator"] as const` and the
   `MilestoneStatus` type;
 - `OWNERS = ["agent", "operator"] as const`;
-- `GATE_ID_PATTERN = /^G\d+$/` and `MILESTONE_ID_PATTERN = /^M\d+$/`;
+- `GATE_ID_PATTERN = /^G\d+$/` — used **only** to describe gates in the prompt and to label them
+  in logs. There is no milestone ID pattern and IDs are never validated: shipped playbooks already
+  contain `M5a`/`M5b` (`plans/0004`), and the operator may renumber by hand (product §6.5). A row
+  is a gate because `owner === "operator"`, never because of how its ID is spelled;
 - `EXECUTION_STATUS_HEADING = "Execution Status"`;
 - `EXECUTION_TABLE_SPEC` — the human-readable markdown block (header row, column meanings, the
   legal status values, the gate-row rule) that both `planReviewPrompt` and
@@ -94,7 +97,10 @@ trim + lowercase + backtick strip. Missing `Owner` column ⇒ every row defaults
 (backward compatibility, product §9.3). Missing `Commit`/`Notes` ⇒ `undefined`.
 
 **Tolerate:** any case, surrounding backticks, bold (`**done**`), leading/trailing whitespace,
-extra columns, absent alignment row, `—`/empty cells.
+extra columns, absent alignment row, `—`/empty cells, and **pipes inside cells** — Notes cells in
+shipped playbooks hold paragraphs of prose with inline code, so the row splitter honours `\|` and
+backtick spans, and only the `Milestone`, `Owner` and `Status` cells need to resolve cleanly. A
+fixture test parses the real `plans/0002`–`0004` playbooks.
 
 **Throw `ExecutionTableError` (which `withErrorHandling` turns into `error`) when:** no
 "Execution Status" heading; no pipe table under it; no `Milestone` **or** no `Status` column; zero
@@ -155,6 +161,18 @@ Exports:
    indented items — is **not** reused for pause blocks; the scoped scanner replaces it here,
    because the two have opposite requirements about indentation.
 
+**Agent-authored blocks are the larger hole, and quoting does not cover it.** The execute session
+has `Edit` on `04_execute.md` and product §5.3 lets it write its own block — which could arrive
+with every box and the resume marker already ticked, a wrong pause number, or no marker at all.
+So the module also exports `normalisePauseBlock(content, { pauseNumber, rowId }): string`, which
+the handler runs on **every** pause regardless of who wrote the block: untick all boxes in the
+last block, correct the heading number, and if the §5.2 minimum is not met, lift the agent's items
+and re-render through `renderPauseBlock`. "Structurally impossible to omit" is only true once
+every block has been through the renderer or the normaliser.
+
+The fence is chosen longer than the longest `~` run in the message, and the scanner's skip rule is
+the blockquote prefix — the fence is for rendering, the prefix is what makes the text inert.
+
 Round-trip tests are mandatory: render a block whose `agentMessage` contains a ticked resume
 marker, a `- [ ]` item, a `## Operator actions — pause 9 (M1)` heading and a stray `~~~`, then
 assert `findLastPauseBlock` still finds the real block and `readPauseBlockState` reports the real
@@ -184,17 +202,22 @@ inspecting the stage string, and a task can legitimately error *while* it has st
 **`src/pipeline/states.ts`:** `STAGE_ORDER` today is `STAGES.filter(s => s !== "error")`. That
 filter becomes an explicit `NON_LINEAR_STAGES = new Set(["error", "need_operator"])`, so the next
 detour stage is a one-line change and the intent is named. `isHumanStage` then returns true for
-`need_operator` for free. `STAGE_NEXT_NAME` gets `need_operator: "Resume Execution"`.
+`need_operator` for free. `STAGE_NEXT_NAME` does **not** get a `need_operator` entry: every
+consumer of that map builds the string "Ready to advance to ${name}" (`drive`'s hint,
+`ensureCompletionSection`), which is exactly the wording product §7.2 forbids for a pause.
 
 **The `(file, marker)` map.** Change `STAGE_QUESTIONS_FILE` from `Stage → string` to
-`Stage → { file: string; marker: RegExp; markerText: string }` — one map, not two parallel ones,
-because two maps can disagree. `markerText` is what `drive` prints in its hint (product §7.2);
-`marker` is what `hasCompletionMarker`/`removeCompletionMarker` match. Existing stages get the
-`Ready to advance to …` marker; `need_operator` gets `OPERATOR_RESUME_MARKER` from Q3.
+`Stage → { file: string; markerText: string }` — one map, not two parallel ones, because two maps
+can disagree. `markerText` is what `drive` prints in its hint (product §7.2) and what the
+invariant test pairs with `file`. Existing stages get `Ready to advance to …`; `need_operator`
+gets `OPERATOR_RESUME_MARKER` from Q3.
 
-`hasCompletionMarker` and `removeCompletionMarker` currently hard-code the
-`^-\s*\[x\]\s*Ready to advance\b` regex; they take the marker as an argument instead. This is the
-mechanical part of the change most likely to be under-done — grep for every call site.
+`hasCompletionMarker` and `removeCompletionMarker` keep their signatures and their hard-coded
+`Ready to advance` regex. They are **never called for `need_operator`** — Q6 routes that stage to
+`resumeFromOperatorPause`, which reads the marker through `operator-block.ts`. Parameterising
+them would touch every handler call site for no behavioural gain, in the one file where a slip
+re-opens issue #3. The only mechanical fallout is the map's readers (`tryAdvance`, `drive`,
+`radio`) switching from `STAGE_QUESTIONS_FILE[s]` to `.file`.
 
 **The invariant test** asserts uniqueness of the `(file, markerText)` pair across all stages, not
 of `file` alone, and is the test AC20 requires. It must fail if someone later points
@@ -204,7 +227,9 @@ its new form.
 **`src/state/store.ts`:** `writeState` grows a branch mirroring the `error` one —
 for `need_operator`, `prev = next = paused_stage` (falling back to `ready_to_execute` when
 absent). Add `pauseForOperator(planPath, { row, reason })` and `resumeFromOperator(planPath)`
-helpers so that "which fields get cleared on resume" lives in exactly one place; a forgotten
+helpers so that "which fields get cleared on resume" lives in exactly one place. The handler
+calls `pauseForOperator` **before** its commit, so the pause lands in one commit and the tree is
+clean while the operator does git work at the gate (product §8.4); a forgotten
 `operator_reason` would otherwise haunt `pitwall` for the rest of the task's life.
 
 ---
@@ -243,8 +268,15 @@ Three details worth fixing in the design rather than discovering in code:
 1. **The stall threshold is a function of state, not a constant:** `thresholdFor(row, resumedAt)`
    returns 1 when `row.id === resumedAt` (the post-overrule rule, product §4.4) and
    `MAX_STALLED_SESSIONS = 2` otherwise. `resumedAt` is read from `operator_milestone` before the
-   state is cleared on resume, and is passed into the handler through `TaskContext` rather than
-   re-read from disk mid-loop.
+   state is cleared on resume, and **persisted** as `resumed_at: <id>` in `state.yml` by
+   `resumeFromOperator` — not threaded through `TaskContext`. `drive` dispatches one task per
+   invocation, chosen *after* the advancement pass; with two actionable tasks the resumed one may
+   not run until a later `drive`, and an in-memory value would be gone, silently restoring
+   threshold 2. It also honours the project rule that state lives in `state.yml`, never in memory.
+   The handler reads it at loop entry and clears it when that row reaches `done`.
+4. **A row that vanishes mid-session is judged by position, not ID.** If `row(next.id)` is absent
+   after the session (the agent renamed or split it), the outcome is progress when the count of
+   `done` rows grew, and a stall otherwise. Never an exception.
 2. **The session cap is computed once, at loop entry**, from the initial parse:
    `cap = pendingAgentRows × MAX_STALLED_SESSIONS + SLACK`. Computing it per iteration would let a
    growing table raise its own ceiling (product §4.5).
@@ -299,6 +331,16 @@ must special-case `need_operator` so it prints the operator wording, the reason 
 marker text (product §7.2), and `--retry`'s filter (`stage === "error"`) must stay as-is so it
 never picks up a paused task.
 
+**Branch awareness.** `drive` runs the advancement pass on whatever branch is checked out, and
+only checks out the task branch afterwards. For ordinary pit stops that is harmless; at a gate the
+operator has usually just been on `main` merging PRs, where this task's `state.yml` is older or
+absent and the tick is invisible (product E17). v1 does not reorder `drive`; it makes the failure
+legible: the pause block and pit-board name the branch, and when `drive` ends with nothing to do
+while the current branch is not a `vibe-racer/*` branch but such branches exist, it adds one line:
+"Task state lives on each task's branch — if you paused a task, check out its `vibe-racer/…`
+branch and run `drive` again." Checking out before advancing is the real fix; the design review
+should either accept it into this task or record it as a follow-up.
+
 `pitwall` groups on `stage === "need_operator"` and reads `operator_reason`/`operator_milestone`
 straight from state — no file parsing in the CLI layer, which is why §8.4 writes the reason into
 `state.yml` in the first place.
@@ -307,4 +349,4 @@ straight from state — no file parsing in the CLI layer, which is why §8.4 wri
 
 # Complete
 
-- [ ] Ready to advance to Design Review
+- [x] Ready to advance to Design Review

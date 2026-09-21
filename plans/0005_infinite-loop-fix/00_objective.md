@@ -164,6 +164,9 @@ pair, and that has to be stated in `CLAUDE.md` and pinned by a test.
   it describes one session and checkboxes, not one session per milestone against a status table),
   `CHANGELOG.md`
 - Tests, starting with the reported case: an unchanged table must pause, never loop
+- Closing step, last execution milestone: review the security declaration (`docs/security.md`,
+  root `SECURITY.md`, README "Security" section) against the code as shipped. Docs only — a
+  finding that needs a guard change becomes a follow-up, so "guardrails unchanged" still holds
 
 **Out of scope**
 
@@ -212,6 +215,9 @@ pair, and that has to be stated in `CLAUDE.md` and pinned by a test.
     do and how to resume, with no terminal scrollback needed.
 11. `CLAUDE.md` states the `(file, marker)` injectivity invariant, a test enforces it, and
     `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` is deleted.
+12. The security declaration has been reviewed against the code as the last execution milestone:
+    `docs/security.md`, `SECURITY.md` and the README "Security" section agree with each other and
+    with the source, and that milestone changed no code.
 
 ---
 

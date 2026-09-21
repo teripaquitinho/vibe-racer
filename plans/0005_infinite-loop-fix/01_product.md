@@ -21,8 +21,9 @@
 9. [Configuration and prerequisites](#9-configuration-and-prerequisites)
 10. [Edge cases and error recovery](#10-edge-cases-and-error-recovery)
 11. [Scope boundaries](#11-scope-boundaries)
-12. [Follow-up tasks this spec creates](#12-follow-up-tasks-this-spec-creates)
-13. [Acceptance criteria](#13-acceptance-criteria)
+12. [Closing step — review the security declaration](#12-closing-step--review-the-security-declaration)
+13. [Follow-up tasks this spec creates](#13-follow-up-tasks-this-spec-creates)
+14. [Acceptance criteria](#14-acceptance-criteria)
 
 ---
 
@@ -281,7 +282,8 @@ which are not merged into `main` (origin/main still at 273c1c9).
 
 - [ ] Operator actions complete — resume execution
 
-When done, tick every box above and run `vibe-racer drive`.
+When done, switch back to branch `vibe-racer/0016_unify-ui-brand-style`, tick every box above and
+run `vibe-racer drive`.
 ```
 
 ### 5.2 Guaranteed minimum content
@@ -293,7 +295,8 @@ Every pause block, regardless of cause, contains (Q3):
 3. **what the agent will check on resume** — or "None — the agent will simply retry" if there is
    no verification;
 4. the **resume marker**;
-5. the closing line: *"When done, tick every box above and run `vibe-racer drive`."*
+5. the closing line: *"When done, switch back to branch `vibe-racer/NNNN_slug`, tick every box
+   above and run `vibe-racer drive`."* (E17)
 
 An operator who never saw the terminal must be able to act on the block alone (AC10).
 
@@ -306,6 +309,13 @@ An operator who never saw the terminal must be able to act on the block alone (A
 | Agent declared `needs_operator` **without** a block | Pipeline writes one from the agent's final message |
 | Silent stall | Agent's final message verbatim under "What the agent said", plus one generic item: *"Resolve the issue described above (or edit the milestone in the Execution Status table)"* |
 | Session backstop | The safety-limit sentence from §4.5, plus the same generic item |
+
+**An agent-authored block is normalised, never trusted.** The execute session has `Edit` on
+`04_execute.md`, so "used as written" covers its *content* only. At pause time the pipeline:
+unticks every box in the block (an agent must not be able to hand the operator a pre-ticked
+checklist or resume marker), sets the correct pause number, and checks the guaranteed minimum of
+§5.2 — if the marker, the closing line or an actionable item is missing, it re-renders the block
+from the agent's items and final message.
 
 We do **not** try to turn prose into a multi-item checklist — a wrong checklist is worse than an
 honest generic one (Q3).
@@ -471,9 +481,14 @@ pause** (explain the gate, help reword a milestone) instead of the borrowed `nee
 An operator stuck on a gate will want to ask "what exactly did you need from PR 3?" or "can this
 milestone be reworded so you can do it?".
 
-Radio at this stage is conversational and may help the operator edit the playbook, but it follows
-the same rules as the execute lap: **it never pushes, opens PRs, merges or deploys, and it cannot
-resume the task — only the operator's tick does that.**
+Radio at this stage is conversational and may help the operator edit the playbook. Its role
+description carries the same rules as the execute lap: **it does not push, open PRs, merge or
+deploy, and it does not tick the resume marker — that is the operator's.**
+
+Be precise about what enforces this: **nothing but the prompt.** `radio` spawns the operator's own
+interactive `claude` CLI; the tool guard (including Rule 0) does not run there, and the operator's
+normal Claude Code permission prompts are the only gate. That is true of radio at every stage
+today, not new here — but it must not be described as a guarantee (see §12.3, S2).
 
 ---
 
@@ -505,7 +520,7 @@ next: ready_to_execute
 ```
 
 The handler writes this. The agent never does — `state.yml` is pipeline-owned and guard Rule 0
-denies agent writes at every stage (objective constraint).
+denies `Write`/`Edit` to it in every pipeline session (objective constraint).
 
 ### 8.3 The execute loop, as a decision sequence
 
@@ -533,10 +548,15 @@ loop:
 1. Ensure `04_execute.md` has an Operator actions block for this pause (§5). If the agent already
    wrote one, keep it; otherwise build one from the plan section or the agent's final message.
 2. Set the row's status to `needs_operator` if it is not already.
-3. Commit: `vibe-racer: paused for operator at <id> for #N`.
-4. Write `state.yml`: `need_operator` with `paused_stage`, `operator_reason`,
+3. Write `state.yml`: `need_operator` with `paused_stage`, `operator_reason`,
    `operator_milestone`.
+4. Commit **both**: `vibe-racer: paused for operator at <id> for #N`.
 5. Print the pit-board message.
+
+The state write comes *before* the commit, unlike other stages where it is swept up by the next
+lap. A pause can last days, and the operator's work at a gate is usually git work — switching
+branches, rebasing, merging. A paused task must leave a **clean working tree**, or the first
+`git checkout` the operator runs trips over a dirty `state.yml`.
 
 ---
 
@@ -594,6 +614,7 @@ loop:
 | E13 | Verification cannot run (`--network none`) | Falls back to local refs, then to the operator's tick, and says so | Q4 |
 | E14 | Session cap trips | **Pause**, not error, with the safety-limit wording | Q2 |
 | E15 | Plan has no gates at all | "Operator gates" section says "None — execution runs start to finish without you" | Q1 |
+| E17 | Operator runs `drive` from another branch (likely — they have just been merging on `main`) | `drive` reads plan files from the working tree, so from `main` the task does not look paused and the tick is not seen. The pause block's closing line and the pit-board message therefore name the task branch: *"switch back to `vibe-racer/NNNN_slug`, tick every box above and run `vibe-racer drive`"* | Review |
 | E16 | Milestone genuinely too large (commits, never finishes) | Pauses after 2 sessions with the *"committed work but did not finish"* wording, pointing at splitting the milestone | Q2 |
 
 ### Recovery guarantees
@@ -626,6 +647,8 @@ loop:
 - Docs: `CLAUDE.md` (the `(file, marker)` invariant, operator gates), `docs/how-it-works.md`
   (the detour; its "Execution Loop" section is already out of date), `CHANGELOG.md`
 - Tests, starting with the reported case: an unchanged table must pause, never loop
+- **Closing step:** a full review of the security declaration — `docs/security.md`, root
+  `SECURITY.md`, the README "Security" section — against the code as shipped (§12). Docs only
 
 ### Out of scope
 
@@ -644,7 +667,63 @@ loop:
 
 ---
 
-## 12. Follow-up tasks this spec creates
+## 12. Closing step — review the security declaration
+
+> Added by the operator after product review. Runs as the **last execution milestone**, after all
+> code and tests have landed and before the QA lap, so it describes the code as shipped.
+
+`docs/security.md` is the project's public security declaration. It was last touched when the QA
+lap landed (0.3.0) and the code has moved since; this task moves it again. The closing step is a
+**full review of the declaration against the code as it stands** — not just a paragraph about
+`need_operator`.
+
+### 12.1 What is reviewed
+
+`docs/security.md` is the source of truth. The two shorter statements that summarise it must agree
+with it when the step is done: the root `SECURITY.md` ("Security Posture") and the "Security"
+section of `README.md`.
+
+### 12.2 How
+
+Every factual claim in the declaration is checked against the source (`src/claude/guard.ts`,
+`src/claude/session.ts`, `src/cli/radio.ts`, `src/git/secrets.ts`, the handlers' `allowedTools`)
+and either confirmed, corrected, or removed. Claims are never softened to fit; if the code is
+weaker than the declaration, the declaration says so under Known Limitations.
+
+### 12.3 Known starting points
+
+Already verified as stale or missing — the review must cover at least these:
+
+| # | Finding | Where |
+|---|---|---|
+| S1 | "19 commands" blocked — `BASH_BLOCKLIST` has **18** entries, and the doc's own list has 18 | `docs/security.md`, `SECURITY.md`, `README.md` |
+| S2 | "a multi-layered security system is enforced on every session" — **`radio` is not such a session.** It spawns the operator's own interactive `claude` CLI with a system prompt; `canUseTool`, Rule 0 and the path jail do not apply. Radio is absent from the declaration entirely | `docs/security.md`, `SECURITY.md` |
+| S3 | Root `SECURITY.md` predates 0.3.0: it says review stages have no Bash (QA does), and omits Rule 0, `jailToPlanDir`, and the `settingSources` trust-boundary change | `SECURITY.md` |
+| S4 | "vibe-racer never pushes" is a **prompt rule only** — the guard does not block `git push`, `gh pr create` or `gh pr merge`. Belongs under Known Limitations until the §13 follow-up lands | `docs/security.md` |
+
+### 12.4 What this task itself adds to the declaration
+
+- **`need_operator`**: a human stage; no agent session runs while paused. State is written by the
+  handler only (Rule 0 unchanged).
+- **Gate verification deliberately uses the network** (`git fetch`, `gh pr view`) from inside an
+  execute session. State how that sits next to the Docker `--network none` recommendation (§6.4).
+- **Agent prose is written into a committed file** (the pause block). It is quoted inertly (§5.5)
+  so a session cannot resume its own task through its final message, and it passes through the
+  pre-commit secret scan like any other staged content.
+- **What an execute session can still do to the playbook**: it has `Edit` on `04_execute.md`, so
+  the pause block it authors is normalised by the handler (§5.3) rather than trusted.
+
+### 12.5 Boundaries
+
+- **Docs only.** This step changes no code and does not move the guard — the "guardrails
+  unchanged" constraint holds. A finding that needs a code change becomes a follow-up task (§13),
+  listed by name in the declaration's Known Limitations.
+- `CHANGELOG.md` history is not rewritten (0.1.0 may keep saying 19); the new entry notes the
+  correction.
+
+---
+
+## 13. Follow-up tasks this spec creates
 
 Both are created **alongside this task landing**, not inside it.
 
@@ -662,7 +741,7 @@ Both are created **alongside this task landing**, not inside it.
 
 ---
 
-## 13. Acceptance criteria
+## 14. Acceptance criteria
 
 Carried from the objective, sharpened by the answers. Each is independently testable.
 
@@ -713,8 +792,8 @@ Carried from the objective, sharpened by the answers. Each is independently test
     five elements and the three ways out. *(Q3)*
 17. The pause block names the kind of stall ("made no changes" vs "committed but did not finish"),
     quotes the agent's message inertly, and says plainly when there was no message. *(Q2, Q3)*
-18. `radio` opens at `need_operator` with a role description written for a pause, and cannot
-    resume the task. *(Q5)*
+18. `radio` opens at `need_operator` with a role description written for a pause, which
+    instructs it not to push, merge, deploy or tick the resume marker. *(Q5)*
 19. A QA report for a task that passed an operator gate states its diff coverage up front. *(Q7)*
 
 **Housekeeping**
@@ -723,3 +802,7 @@ Carried from the objective, sharpened by the answers. Each is independently test
     `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` is deleted. *(§5.6)*
 21. The guard is unchanged by this task; `docs/how-it-works.md` documents the detour and the
     known QA-scope limitation. *(Q6b, Q7)*
+22. As the last execution milestone, the security declaration has been reviewed against the code:
+    `docs/security.md`, `SECURITY.md` and the README "Security" section agree with each other and
+    with the source; findings S1–S4 (§12.3) are resolved; the additions in §12.4 are present; and
+    no code changed in that milestone. *(§12)*
