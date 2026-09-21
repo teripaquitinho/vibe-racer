@@ -33,21 +33,35 @@ the only thing that produces it.**
 |---|---|---|---|
 | M1 | Table contract + parser | `src/pipeline/execute-table.ts`, `tests/pipeline/execute-table.test.ts`, `tests/fixtures/playbooks/` | Pure module, no callers yet |
 | M2 | Pause-block format | `src/pipeline/operator-block.ts`, `tests/pipeline/operator-block.test.ts` | Pure module, no callers yet |
-| M3 | State layer **+ resume path** | `schema.ts`, `states.ts`, `store.ts`, `discovery.ts`, `advancement.ts` + their tests | The `(file, markerText)` map change lands with all three call sites in the same commit |
-| M4 | Operator surfaces | `cli/drive.ts`, `cli/pitwall.ts` + tests | Reads `Task.operator*`; inert until something pauses |
+| M3 | State layer **+ resume path** | `schema.ts`, `states.ts`, `store.ts`, `discovery.ts`, `advancement.ts`, **`cli/drive.ts` (call-site fix only)** + their tests | The `(file, markerText)` map change lands with all three call sites — `advancement.ts:24`, `drive.ts:100-101`, `states.test.ts:95-103` — in the same commit |
+| M4 | Operator surfaces | `cli/drive.ts`, `cli/pitwall.ts` + tests | The operator-group output — M3 already fixed drive's call site. Reads `Task.operator*`; inert until something pauses |
 | M5 | **The loop** — `decideNextStep`, `foldOutcome`, driver, `repoSnapshot`/`currentBranch` | `handlers/execute.ts`, `git/operations.ts` + tests | First and only producer of `need_operator`; **AC1 test lands here** |
 | M6 | Prompts | `claude/prompts.ts`, `handlers/qa.ts` + `prompts.test.ts` (incl. the contract test) | Plan / execute / qa / chat prompts + `EXECUTION_TABLE_SPEC` interpolation |
 | M7 | Docs + housekeeping | `CLAUDE.md`, `docs/how-it-works.md`, `CHANGELOG.md`, delete `execute_infinite_loop_bug.md`, create the follow-up tasks | AC20 |
 | M8 | Security declaration review | `docs/security.md`, `SECURITY.md`, `README.md` — **docs only, no code** | AC22 |
 
-**M3 before M5 is not negotiable, and it is the same class of hazard as `plans/0004`'s
-"M2 before M3".** M5 is the only code that can write `stage: need_operator`. If it lands first,
-any task that pauses during the intervening milestone is stranded: `tryAdvance` would take the
-*generic* path, find the ticked "Ready to advance to Execution" left over from sign-off, pass
+**M3 before M5 is not negotiable** — but TypeScript, not discipline, enforces that half of it.
+M5 cannot compile without M3: `pauseForOperator` lives in `store.ts`, and `"needs_operator"` is
+not a `Stage` until `schema.ts` grows it. Landing M5 first is not a thing that can happen.
+
+**The hazard worth naming is the one the compiler does not catch: a split M3.** M3 lands two
+changes that look separable and are not — the `STAGE_QUESTIONS_FILE.need_operator` entry
+(`states.ts`) and the `need_operator` delegation at the top of `tryAdvance` (`advancement.ts`,
+design §7.1). Land the map entry without the delegation and every paused task takes the *generic*
+path: it finds the ticked "Ready to advance to Execution" left over from sign-off, passes
 `validateAnswers` vacuously (a playbook has no `**Answer:**` markers, so nothing is unanswered),
-get `null` from `nextStage("need_operator")`, and return `advanced: true` having changed nothing —
-a false success on every `drive`, forever. Because vibe-racer executes itself, that window is not
-hypothetical (Q2).
+gets `null` from `nextStage("need_operator")` — and `tryAdvance` returns `advanced: true` anyway,
+because `advancement.ts:59-64` guards the `updateStage` call with that `null` but not the return.
+A false success on every `drive`, forever, and the same class of hazard as `plans/0004`'s
+"M2 before M3". So: **the map entry and the delegation go in one commit**, and M3 also hardens the
+generic path to return `advanced: false` when `nextStage` yields `null` (design §7.1), which
+closes the hazard class rather than stepping around it.
+
+The mirror-image failure is worth knowing too, because it is quieter. If `stage: need_operator`
+ever reaches `state.yml` before `schema.ts` knows the stage, `stateSchema.parse` rejects the file
+and `discoverTasks` swallows it in its bare `catch` (`discovery.ts:42-44`) — the task disappears
+from `pitwall` and `drive` entirely, with no error anywhere. Because vibe-racer executes itself,
+neither window is hypothetical (Q2).
 
 M4 before M5 for the cheaper version of the same reason: a paused task landing before the CLI
 knows about pauses shows as a bare `[need_operator]` with no reason and no marker hint. Cost of
@@ -60,24 +74,54 @@ landed, so it describes the code as shipped (§12).
 
 ### Q2: vibe-racer executes this task with the code this task is changing. How is that handled?
 
-M5 replaces the loop that is running this very task. From the moment M5 commits, milestones M6–M8
-execute under the new handler, against `plans/0005_infinite-loop-fix/04_execute.md` — a playbook
+M5 replaces the loop that is running this very task — but not at the moment it commits, and that
+is the part worth pinning. `handleExecute` is a `while (true)` inside a single Node process that
+imported the module at startup, and the installed CLI runs `dist/`, not `src/`; committing a
+rewritten `handlers/execute.ts` mid-run changes nothing for the run in flight. Whenever the
+cutover does happen, it happens against `plans/0005_infinite-loop-fix/04_execute.md` — a playbook
 written by the **old** plan prompt, so it has no Owner column. A bug in M5 does not fail a test;
-it bricks the task's own execution. What is the protocol?
+it bricks the task's own execution. When does the cutover actually happen, and what is the
+protocol?
 
 **Answer:**
 Treat M5 as a live cutover and plan for it explicitly rather than discovering it.
 
-1. **Accept the cutover; do not try to avoid it.** M6–M8 running under the new loop is the
-   single best integration test this change can get, and it exercises **AC13 live** — a
-   no-Owner-column playbook executing end to end. Note that in `04_execute.md`'s M5 row.
-2. **M5's task list ends with a dry read, not a dry run:** after the code lands and the suite is
-   green, parse this task's own `04_execute.md` with the new parser in a scratch script and
+1. **The cutover is an explicit step with two owners, and only one of them is the agent.**
+   Nothing changes when M5 commits: the process still holds the old bundle, so M6–M8 go on being
+   driven by the old regex loop — the very bug this task exists to remove — and the live AC13
+   exercise never happens. Splitting the steps by who can actually perform them:
+
+   | Step | Owner | Note |
+   |---|---|---|
+   | `npm run build` | **M5 agent** (last item in its task list) | The agent has `Bash`. This is load-bearing: `vibe-racer` on this machine is an `npm link` — `/opt/homebrew/bin/vibe-racer` → `<repo>/dist/index.js` — so the build overwrites the exact bundle the running CLI was loaded from |
+   | Commit M5 | pipeline | The driver's own `commitAll` |
+   | **Ctrl-C** | **operator, at the terminal** | The agent session is a *child* of the `drive` process; it cannot interrupt its own parent. This step can never be an agent task |
+   | `git status`, discard partial M6 work | **operator** | See below — the interrupt lands mid-session, not in a gap |
+   | `vibe-racer drive` | **operator** | New bundle, new loop, M6 onward |
+
+   **There is no quiet gap to interrupt in.** `execute.ts:38-43` runs `commitAll` → `readFile` →
+   build prompt → `log.info("Executing milestone 6 …")` → `runAndStream`, with nothing in
+   between: sub-second. So the Ctrl-C lands *inside* the M6 session, which may already have
+   edited files. That is why the discard step exists and is not optional — without it the
+   restarted loop runs M6 on top of uncommitted partial M6 work. State is safe either way
+   (`ready_to_execute`, M6's row still `pending`); it is the working tree that needs the sweep.
+   The operator's cue is the `Executing milestone 6` line itself.
+
+   **If the operator misses the window, nothing is broken** — M6–M8 simply complete under the old
+   loop, which handles them fine (the table is well-formed and none of them pause) and the live
+   AC13 exercise is the only thing lost. Say so in `04_execute.md`'s M5 row, so the interrupt
+   reads as a deliberate, skippable choice rather than a crash or a mandatory agent step.
+   *Corollary:* M1–M5 themselves all run under the old, unbounded loop regardless. If one of them
+   stalls, point 3 is the only way out.
+2. **Immediately before that cutover, a dry read — not a dry run:** once the code lands and the
+   suite is green, parse this task's own `04_execute.md` with the new parser in a scratch script and
    assert the row set matches the table as written. A parser that errors here would send the task
    to `error` on the operator's next `drive` (AC12 working as designed, at the worst moment).
 3. **The escape hatch stays documented and unchanged** (bug spec §9): the loop is bounded now,
    but if M5 misbehaves, Ctrl-C leaves the task at `ready_to_execute` with the first unfinished
-   row intact. No state is lost because every pause and every milestone commits.
+   row intact. No *state* is lost, because every pause and every milestone commits — but note the
+   distinction point 1 draws: `state.yml` survives an interrupt, the working tree does not
+   necessarily, so an interrupt that lands mid-session is always followed by `git status`.
 4. **Do not bump the CLI version or cut a release inside this task.** Releases are the cleanup
    lap's and the operator's business; a mid-execution version bump would make the security
    declaration in M8 describe a version that does not exist yet.
@@ -107,7 +151,13 @@ evidence in the playbook**, the way `plans/0004` recorded its AC2 evidence.
 - **The evidence run (M5, once, not committed).** Before replacing `handleExecute`, run that same
   test file against the old handler on a scratch commit and capture the timeout output. Paste the
   captured output into the M5 row's Notes in `04_execute.md`. That is the artefact QA reads to
-  verify AC1, and it costs one command.
+  verify AC1, and it costs one command:
+  `npx vitest run tests/pipeline/handlers/execute.test.ts --testTimeout=5000`.
+  **Stub `commitAll` as well as `runAndStream` for this run.** The old handler's loop body is
+  `readFile → runAndStream → commitAll` (`execute.ts:22-44`), so a stub on `runAndStream` alone
+  leaves a real `git add .` + commit firing every iteration against this repository until the
+  timeout — hundreds of junk commits on the task branch, in the milestone whose whole job is a
+  clean cutover.
 - **Write the test before the implementation** in M5's task list — it is the only milestone where
   test-first is mandated, because it is the only one where the test *is* the acceptance criterion.
 - Everywhere else, tests land in the same commit as the code they cover (the project's existing
@@ -137,6 +187,11 @@ Snapshot. Tests never read `plans/` at run time.
   `no-heading.md`, `unknown-status.md` (AC12), `legacy-blocked.md` (AC11),
   `pending-in-summary-only.md` (E3). Plus `no-owner-column.md` — which `0002`–`0004` already are,
   so it is covered by the real fixtures rather than duplicated.
+- **`pending-in-summary-only.md` is the one that carries full-file shape**, not just a table:
+  front matter, prose, and a Milestone Summary table *above* the `## Execution Status` heading.
+  Every other fixture is a bare status section, which never exercises "scan for the **first**
+  heading that matches" — the step that does the real work of E3. A parser that simply grabs the
+  first pipe table in the file passes every other fixture in this list.
 - `plans/0004`'s fixture is the important one: it carries `M5a`/`M5b` IDs and Notes cells
   containing inline code, quotes and prose. If the row splitter survives that, it survives the
   field.
@@ -190,7 +245,9 @@ Execution, in two separate milestones, and the plan says so explicitly so QA jud
   table) — plus the detour, the three ways out of a pause, and the known QA-scope limitation
   (AC21).
 - `CHANGELOG.md`: one entry, noting the `BASH_BLOCKLIST` count correction (S1) rather than
-  rewriting 0.1.0's history.
+  rewriting 0.1.0's history. **This overrides `02_design.md` §14**, which assigned the entry to
+  the cleanup lap; §14 has been amended to match. The cleanup lap must not add a second entry for
+  this task — say so in the M7 row so the cleanup agent reads it.
 - **Delete `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md`** (AC20) — last act of M7,
   after confirming every design decision it carries is reflected in `02_design.md` or the code.
 - Create the three follow-up tasks with `vibe-racer new` (§13.1, §13.2, Q5 above).
@@ -211,4 +268,4 @@ plan-mandated documentation.
 
 # Complete
 
-- [ ] Ready to advance to Plan Review
+- [x] Ready to advance to Plan Review

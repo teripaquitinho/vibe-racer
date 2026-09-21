@@ -537,7 +537,7 @@ if (state.stage === "error") {
 Without this branch `nextStage("need_operator")` returns `null` (index `-1`), and a paused task
 would render with no forward arrow in `pitwall`.
 
-Two helpers so "which fields get cleared on resume" lives in exactly one place (Q4):
+Three helpers so "which fields get cleared on resume" lives in exactly one place (Q4):
 
 ```ts
 export function pauseForOperator(
@@ -546,6 +546,8 @@ export function pauseForOperator(
 ): void;
 
 export function resumeFromOperator(planPath: string): { pausedStage: Stage; milestone?: string };
+
+export function clearResumedAt(planPath: string): void;          // §6.3 — one write, then never again
 ```
 
 `pauseForOperator` writes `stage: need_operator`, `paused_stage` (default `ready_to_execute`),
@@ -553,6 +555,17 @@ export function resumeFromOperator(planPath: string): { pausedStage: Stage; mile
 `resumeFromOperator` sets `stage` back to `paused_stage`, **returns** `operator_milestone` before
 clearing it, writes `resumed_at: <milestone>`, and clears `paused_stage`/`operator_*`. A
 forgotten `operator_reason` would otherwise haunt `pitwall` for the rest of the task's life.
+
+**`planPath` here is absolute — and that is not what every caller already holds.** The two
+existing conventions in this codebase disagree, silently: handlers pass repo-relative
+`ctx.planPath` straight into `updateStage` (`execute.ts:47`), which works only because the
+process cwd is the repo root, while `advancement.ts:61` passes `path.join(cwd, planPath)`. All
+three helpers above take the **absolute** form, so the call in §6.4 is
+`pauseForOperator(path.join(ctx.cwd, ctx.planPath), …)` and the one in §7.2 is
+`resumeFromOperator(path.join(cwd, planPath))`. Getting it wrong is neither quiet nor contained:
+`readState` throws `ENOENT`, and `tryAdvance` runs inside the `for (const task of tasks)` loop at
+`drive.ts:59-74`, which is **not** wrapped in `withErrorHandling` — one bad path takes down
+`drive` for every task, before any task is selected.
 
 ### 5.4 `src/state/discovery.ts`
 
@@ -661,6 +674,15 @@ at loop entry; the driver clears it when that row reaches `done`.
 split the row, `statusAfter` is `null`; the outcome counts as progress when `doneCount` grew and
 a stall otherwise. **Never an exception** — E12 says a renumbered row must not break anything.
 
+*Note the asymmetry this leaves, so it is not rediscovered as a bug.* When the row is still there
+but untouched — the agent went and finished a **later** milestone instead — `statusAfter` is
+`"pending"`, not `null`, so the `doneCount` branch never runs and the session counts as a stall.
+Two of those pause at the first unfinished row saying *"no progress in 2 sessions"* while the
+repository visibly moved. That is the intended reading (the row we asked for did not move), and
+out-of-order execution is deferred by product decision (§17) — and the wording stays honest
+because `repoChanged` is true in that case, so the block says *"committed but did not finish"*
+rather than *"made no changes"* (§5.4).
+
 **3. The session cap is computed once, at loop entry**, from the initial parse:
 `sessionCap(table) = pendingAgentRows(table).length * MAX_STALLED_SESSIONS + SESSION_CAP_SLACK`.
 Computing it per iteration would let a growing table raise its own ceiling (§4.5). Because a
@@ -675,7 +697,8 @@ export async function handleExecute(ctx: TaskContext): Promise<void>
 ```
 
 ```
-  state  = readState(ctx.planPath)
+  absPlanPath = path.join(ctx.cwd, ctx.planPath)          // §5.3 — store helpers take absolute
+  state  = readState(absPlanPath)
   table  = parseExecutionStatus(read(04_execute.md))      // throws → error, never "nothing pending"
   loop   = { table, currentId: null, stalls: 0, sessionsThisDrive: 0,
              sessionCap: sessionCap(table), resumedAt: state.resumed_at ?? null, lastOutcome: null }
@@ -695,7 +718,16 @@ export async function handleExecute(ctx: TaskContext): Promise<void>
                              rowId: row.id, statusAfter: rowStatus(table, row.id),
                              doneCountBefore, doneCountAfter: doneCount(table),
                              repoChanged: changed(before, after), finalMessage: message })
+                 if (loop.resumedAt === row.id && rowStatus(table, row.id) === "done")
+                   clearResumedAt(absPlanPath)                          // §6.3 below
 ```
+
+**Clearing `resumed_at`.** `LoopState.resumedAt` is read once at loop entry, but the *stored*
+field has to be unset once the resumed row finishes, or a later `drive` that meets a row with
+that same ID silently applies threshold 1 to it and charges the operator a pause they did not
+earn. The `run` branch is the only place that knows, so it clears the field the moment that row
+reaches `done`. `pauseForOperator` clears it on the other exit (§5.3). The `complete` branch does
+not need to: a task advancing to `ai_qa` never reads the field again.
 
 **Honest logging (§4.6).** The ID comes from the table, never from a `milestone++` counter. A
 commit is reported only when `hash` is non-empty; when it is empty the line states what actually
@@ -726,7 +758,8 @@ not be conflated.
    `content = normalisePauseBlock(content + renderPauseBlock(input), …)` — or normalise in place
    when the agent already wrote a block for this row (`agent_declared`).
 2. `content = setMilestoneStatus(content, row.id, "needs_operator")`; write `04_execute.md`.
-3. `pauseForOperator(ctx.planPath, { milestone: row.id, reason: input.why })`.
+3. `pauseForOperator(path.join(ctx.cwd, ctx.planPath), { milestone: row.id, reason: input.why })`
+   — absolute, per the §5.3 path convention.
 4. `commitAll(git, \`vibe-racer: paused for operator at ${row.id} for #${n}\`)`.
 5. Print the pit-board message (§7.2).
 
@@ -767,17 +800,43 @@ pause when `!hasOwnerColumn(table)` (§9.3) — and the legacy-`blocked` line.
 ```ts
 export async function tryAdvance(planPath, currentStage, cwd): Promise<AdvancementResult> {
   if (currentStage === "need_operator") return resumeFromOperatorPause(planPath, cwd);
-  …unchanged generic path…
+  …generic path, unchanged but for the null-next guard below…
 }
 ```
 
-`tryAdvance` keeps its signature and stays the single call site `drive` uses. The generic path is
-**untouched**: its `validateAnswers` call would be actively wrong on a playbook (there are no
+`tryAdvance` keeps its signature and stays the single call site `drive` uses. The generic path
+keeps its shape: its `validateAnswers` call would be actively wrong on a playbook (there are no
 `**Answer:**` markers), and bolting conditionals onto it is how that function becomes
 unreadable (Q6).
 
-`AdvancementResult.reason` gains `"resumed"`; `advanced` stays `true` for a resume so `drive`'s
-existing state re-read fires.
+**One defensive change to the generic path, and it is not optional.** `advancement.ts:59-64`
+reads `const next = nextStage(currentStage); if (next) updateStage(…); return { advanced: true, … }`
+— the `null` case guards the write but **not** the return. For a stage inside `STAGE_ORDER` that
+is harmless. For a stage *outside* it that owns a `STAGE_QUESTIONS_FILE` entry it is a permanent
+false success: `drive` logs "advanced", changes nothing, and does it again on every invocation,
+forever. This task introduces exactly such a stage, and the `need_operator` delegation one line
+above is currently the only thing standing between it and that bug — a single forgotten early
+return reopens it. So the generic path returns `{ advanced: false, reason: "no_next_stage" }`
+when `nextStage` yields `null`, which closes the hazard class instead of routing around it.
+
+**`AdvancementResult.reason` is a closed string union and must grow by three, in one commit.**
+It reads today:
+
+```ts
+reason: "no_questions_file" | "no_marker" | "incomplete_answers" | "incomplete_checklist" | "advanced";
+```
+
+and becomes:
+
+```ts
+reason: "no_questions_file" | "no_marker" | "incomplete_answers" | "incomplete_checklist"
+      | "advanced" | "resumed" | "no_next_stage" | "unparsable_table";
+```
+
+`"resumed"` (§7.2), `"no_next_stage"` (the guard above) and `"unparsable_table"` (§7.2) all land
+in M3 alongside the returns that produce them — a member added late is a `tsc` failure in the
+milestone that returns it. `advanced` stays `true` for a resume so `drive`'s existing state
+re-read fires; it is `false` for the other two.
 
 ### 7.2 `resumeFromOperatorPause(planPath, cwd)`
 
@@ -798,8 +857,20 @@ In order (Q6):
    | agent row, still `needs_operator` | → `pending` (retry, with verification) |
    | anything else — hand-edited to `done`, renamed, renumbered, deleted | **leave alone** |
 
-4. `resumeFromOperator(planPath)` → stage back to `paused_stage`, `operator_*` cleared,
-   `resumed_at` set to the returned milestone so the handler applies threshold 1 (§6.2).
+4. `resumeFromOperator(path.join(cwd, planPath))` — absolute, per the §5.3 path convention —
+   → stage back to `paused_stage`, `operator_*` cleared, `resumed_at` set to the returned
+   milestone so the handler applies threshold 1 (§6.2).
+
+**A parse failure here does not throw.** Step 3 needs the row's current status, so it calls
+`parseExecutionStatus` and can raise `ExecutionTableError`. `tryAdvance` runs inside `drive`'s
+un-wrapped advancement loop (`drive.ts:59-74`), so an escaping throw aborts `driveCommand` for
+**every** task before any is selected — the opposite of what AC12 asks for, and from the
+operator's seat indistinguishable from vibe-racer being broken. `resumeFromOperatorPause`
+therefore catches it, logs the message with the file and line, and returns
+`{ advanced: false, reason: "unparsable_table" }`. The task stays at `need_operator` with its
+marker ticked; the operator fixes the table and drives again. Turning an unparseable table into
+`stage: error` stays the execute handler's job (§10.3), where the task is the one being
+dispatched and `withErrorHandling` is in the stack.
 
 ### 7.3 Gate announcement at `need_execution` (AC14)
 
@@ -1158,6 +1229,12 @@ test nobody maintains (Q5). Only a couple of driver tests stub `runAndStream`.
   alone (AC9).
 - `resumed_at` is written on resume and cleared when the row completes.
 - `need_execution` advance logs the gate list; a malformed table there warns and still advances.
+- **An unparseable table at resume returns `unparsable_table`, does not throw, and leaves the
+  task at `need_operator`** (§7.2) — asserted by driving a paused fixture whose table has been
+  mangled, and checking that the call returns rather than rejects.
+- **The generic path returns `advanced: false` for a stage with no next stage** (§7.1) — the
+  regression test for the `advanced: true`-on-`null` false success, written so it fails if the
+  `need_operator` delegation is ever removed.
 
 **`tests/pipeline/states.test.ts`**
 - **The `(file, markerText)` injectivity test (AC20).** It asserts uniqueness of the *pair*, not
@@ -1167,7 +1244,7 @@ test nobody maintains (Q5). Only a couple of driver tests stub `runAndStream`.
   `STAGE_NEXT_NAME.need_operator === undefined`.
 
 **`tests/state/store.test.ts`** — `writeState` sets `prev = next = paused_stage`;
-`pauseForOperator`/`resumeFromOperator` field lifecycle.
+`pauseForOperator`/`resumeFromOperator`/`clearResumedAt` field lifecycle.
 
 **`tests/cli/drive.test.ts`, `tests/cli/pitwall.test.ts`** — the operator group renders reason,
 milestone and file; output contains neither "error" nor "failed" for a pause (AC15);
@@ -1192,7 +1269,9 @@ when gates are passed; `chatPrompt("need_operator")` carries the pause role desc
 
 Unchanged. `tsup` → `dist/`, `vitest run`, `tsc --noEmit`, `eslint src/`. Two new source files
 are picked up automatically by the existing entry config; no new build steps, no new bundler
-inputs, no `package.json` change beyond the `CHANGELOG` entry the cleanup lap writes.
+inputs, no `package.json` change. **The `CHANGELOG.md` entry is written in execution, not by the
+cleanup lap** — the plan lap moved it into M7 so QA can judge it (plan Q6). The cleanup lap must
+not add a second entry for this task.
 
 **Every milestone ends with a passing `npm run build`, `npm run typecheck`, `npm run test` and
 `npm run lint`** (objective constraint).
