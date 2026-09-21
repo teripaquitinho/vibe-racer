@@ -9,7 +9,8 @@ such when the operator signs the plan off at `need_execution`, not discovered mi
 The guardrails stay exactly as they are. The bug is not that the agent refuses; the bug is that the
 pipeline has nowhere to put a refusal, so it retries it forever.
 
-**`plans/execute_infinite_loop_bug.md` (repo, `plans/` root) is the spec for this task.** It holds
+**`plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` (this task's folder) is the spec for
+this task.** It holds
 the root-cause analysis with file and line references, the proposed design, the file-by-file change
 list, and the test list. Treat it as the primary input, and delete it once this work lands.
 
@@ -123,9 +124,11 @@ pair, and that has to be stated in `CLAUDE.md` and pinned by a test.
 
 ## Open questions for the product and design laps
 
-1. **How many sessions before an undeclared stall pauses?** Proposal: 2, so one flaky or
-   max-turns session gets a retry. 1 is cheaper. No `.vibe-racer.yml` key in v1 unless the design
-   lap argues for one.
+1. **How many sessions before an undeclared stall pauses?** Proposal: 2, so a session that ends
+   early or runs out of room on a large milestone gets one retry. (Not for crashes: a session that
+   throws already goes to `error` via `withErrorHandling`, and `handleExecute` sets no `maxTurns`.)
+   1 is cheaper — in the reported case the second session is pure waste. No `.vibe-racer.yml` key
+   in v1 unless the design lap argues for one.
 2. **Who runs the resume verification?** Agent-side (proposed for v1, simple, costs a session) or
    handler-side (deterministic and free, but the plan must emit machine-runnable checks).
 3. **Gate row IDs:** a distinct prefix (`G1`) or milestone-style numbering (`M9a`)? Proposal: `G<n>`,
@@ -208,7 +211,7 @@ pair, and that has to be stated in `CLAUDE.md` and pinned by a test.
 10. `04_execute.md` for a paused task tells an operator who was not watching the run exactly what to
     do and how to resume, with no terminal scrollback needed.
 11. `CLAUDE.md` states the `(file, marker)` injectivity invariant, a test enforces it, and
-    `plans/execute_infinite_loop_bug.md` is deleted.
+    `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` is deleted.
 
 ---
 

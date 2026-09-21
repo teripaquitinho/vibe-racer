@@ -8,11 +8,9 @@
 
 **Review notes.** The objective is clear and unusually complete; this is not a trivial task (new
 pause stage, new operator workflow, changed sign-off experience), so it takes the full pipeline.
-The decisions in "Decisions already made" are treated as settled and are not re-asked here. One
-discrepancy to be aware of: the objective says the spec lives at `plans/execute_infinite_loop_bug.md`
-(`plans/` root), but the file is actually at `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md`.
-Acceptance criterion 11 should be read as "delete the spec wherever it lives" — I assume the task
-folder copy is the only one.
+The decisions in "Decisions already made" are treated as settled and are not re-asked here. The
+spec lives at `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` (the objective's path has
+been corrected to match); that is the only copy, and acceptance criterion 11 deletes it.
 
 The questions below cover the objective's six open questions, reframed where the product
 behaviour behind them needed sharpening.
@@ -63,16 +61,29 @@ the milestone (max turns, a large milestone, a flaky test). Is that a stall? And
   session counts as a stall — whether or not it committed code. Progress on the *row* is the only
   thing that resets the counter. This keeps the rule explainable in one sentence: "two sessions on
   the same milestone without finishing it, and I stop and ask you."
-- **Threshold:** 2. One retry absorbs a flaky or max-turns session; a second identical outcome is
-  a pattern, not bad luck. Worst-case waste per stall is one paid session, which is acceptable
-  against the current unbounded loss.
+- **Threshold:** 2. One retry absorbs a session that ended early or ran out of room on a large
+  milestone; a second identical outcome is a pattern, not bad luck. (Crashes are not stalls: a
+  session that throws goes to `error` as today.) Worst-case waste per stall is one paid session,
+  which is acceptable against the current unbounded loss.
+- **Exception — after an overrule, the threshold is 1.** If the task was just resumed from a pause
+  at this same milestone, a single session that does not finish it pauses again immediately. The
+  operator already saw this wall once; they should not pay twice to see it again.
+- **The hard cap must never trip on a healthy run.** Because a session that commits code without
+  finishing counts as a stall, a legitimate run can take up to two sessions per milestone. The
+  per-`drive` session cap is therefore sized from that worst case (pending agent milestones ×
+  threshold, plus slack), not "pending + 2". If the cap does trip, the task *pauses* like any other
+  stall — it is not an error — and the pause block says so: "Stopped after N sessions in one run —
+  this is a safety limit; review the Execution Status table before resuming."
 - **No configuration key in v1.** Not in `.vibe-racer.yml`, not as a CLI flag. If nobody asks for
   it, it never needs to exist.
 - **The pause block must say which kind of stall it was**, because the operator's next move
   differs: "The agent made no changes in 2 sessions" (usually an undeclared human-owned step —
   read the agent's message below) versus "The agent committed work in 2 sessions but did not
   finish M4" (usually an oversized milestone — review the commits, then resume or split the
-  milestone). In both cases the agent's final message from the last session is included verbatim.
+  milestone). "Made no changes" means no new commits and a clean working tree across the session
+  — judged on the repository, not on whether the pipeline's own commit was empty, since the agent
+  may commit for itself. In both cases the agent's final message from the last session is included
+  verbatim (see Q3 for how it is quoted).
 - **Terminal output while it happens** must be honest: show the milestone ID, the attempt number
   and the remaining count (e.g. "Executing M9 (attempt 2/2, 9 remaining)"), and never report an
   empty commit as success.
@@ -98,15 +109,27 @@ milestone is unnecessary, or that the agent was wrong?
   said", plus a single generic checklist item: "Resolve the issue described above (or edit the
   milestone in the Execution Status table)". We do not try to turn prose into a multi-item
   checklist — a wrong checklist is worse than an honest generic one.
+- **The agent's words are quoted, never live.** Its message goes into the block as a fenced quote.
+  Anything inside it that looks like a checkbox, a pause heading or the resume marker is inert
+  text: it is never counted as an unticked item and can never resume a task. Only the checklist
+  the block itself owns decides resume.
+- **If the session left no final message** (it ended abnormally), the block says so plainly — "The
+  agent left no closing message; see the terminal log or the last commits" — rather than showing
+  an empty quote. The guaranteed minimum above still holds.
 - **Supported ways out**, all documented in the pause block's closing lines and in
   `docs/how-it-works.md`:
   1. *Do the work* — tick the items, tick the marker, `drive`.
   2. *Overrule the agent* ("this step is fine, try again") — tick the items and the marker without
      doing anything; the agent retries, and if it hits the same wall the task pauses again after
-     one session. Bounded, never a loop.
+     one session, whether it declares `needs_operator` or refuses silently (see the post-overrule
+     threshold in Q2). Bounded, never a loop.
   3. *Skip or rewrite the milestone* — the operator edits the Execution Status table by hand
      (mark the row `done`, or reword the milestone), then ticks and resumes. The table is the
      operator's file as much as the agent's; hand edits are a supported escape hatch, not a hack.
+     **Resume respects hand edits:** it only touches the paused row if that row still reads
+     `needs_operator` (or is an untouched operator gate). A row the operator set to `done` stays
+     `done`; a row they renamed, renumbered or deleted does not break resume — execution simply
+     continues from the first unfinished row in the table as the operator left it.
 - **No new "abandon task" command** in this task. Abandoning is whatever it is today.
 
 ---
@@ -133,6 +156,11 @@ for v1, and what does the operator experience when they ticked too early?
 - **Gates with nothing checkable** (a visual check, "wait 24h for the soak") carry the
   verification line "None — operator's word". The pipeline trusts the tick. We do not invent fake
   verifications for human judgement calls.
+- **Verification that cannot run is not a failed gate.** Under the recommended Docker
+  `--network none` setup, `git fetch` and `gh pr view` fail every time. The agent must tell "the
+  gate is unmet" apart from "I could not check": when the check itself cannot run, it falls back
+  to local refs, and if that is inconclusive it takes the operator's tick as the answer and says
+  so in its session output. Otherwise a sandboxed operator could never pass a gate.
 - **Incomplete tick:** if the resume marker is ticked but checklist items are not, `drive` unticks
   the marker, lists the outstanding items in the terminal, and leaves the task paused — same feel
   as `need_decision` today. No session is started.
@@ -154,12 +182,20 @@ work while paused?
 - **`drive`:** at the moment of pausing, prints a pit-board message: what paused, the checklist
   items, and the resume instruction. On a later `drive` with the task still paused and unticked,
   it lists the task under the same "waiting on operator" wording with the reason and file — it
-  does not start a session and does not treat it as an error. `--retry` does not touch paused
-  tasks; it remains for `error` only.
+  does not start a session and does not treat it as an error. The hint names the real marker
+  ("tick 'Operator actions complete — resume execution' in 04_execute.md"); it must not reuse the
+  ordinary pit-stop wording "Ready to advance to …", which would point the operator at a checkbox
+  that does not exist for a pause. `--retry` does not touch paused tasks; it remains for `error`
+  only.
+- **The one-line reason is always one line.** For a planned gate it is the gate's name; for an
+  agent-declared pause, the agent's one-sentence "why"; for a silent stall, a pipeline-written
+  line ("M9 — no progress in 2 sessions"), never the agent's multi-paragraph message.
 - **Tone:** a pause is the pipeline working as designed. Neutral/amber presentation, never the red
   error styling, and the words "error" or "failed" never appear for a pause.
-- **`radio`: yes, enabled at `need_operator`,** with the Software Engineer persona (the same voice
-  that ran the lap). An operator stuck on a gate will want to ask "what exactly did you need from
+- **`radio`: yes, at `need_operator`,** with the Software Engineer persona (the same voice
+  that ran the lap). Note that radio already opens at any human stage and falls back to that
+  persona, so nothing needs "enabling" — what this task adds is a role description written for a
+  pause (explain the gate, help reword a milestone) instead of the borrowed `need_execution` one. An operator stuck on a gate will want to ask "what exactly did you need from
   PR 3?" or "can this milestone be reworded so you can do it?". Radio at this stage is
   conversational and may help the operator edit the playbook, but it follows the same rules as
   the execute lap: it never pushes, opens PRs, merges or deploys, and it cannot resume the task —
@@ -198,8 +234,27 @@ guard does not block `git push`, `gh pr create` or `gh pr merge`. Tightening it 
   (`git fetch`, `gh pr view`, `gh pr list`) called out as a requirement so gate verification
   keeps working.
 
+### Q7: What does the QA lap see when a gate merged work into `main` mid-task?
+
+The reported case had the operator merge PRs into `main` partway through execution. The QA lap is
+scoped to `git diff main...HEAD`. Once pre-gate work is merged and the task branch is rebased or
+updated, that work is no longer in the diff — QA would review only what came after the last merge
+gate and report on a fraction of the task. Is that acceptable, fixed here, or recorded?
+
+**Answer:**
+Record it and make it visible; do not fix the QA scope in this task.
+
+- Changing what QA diffs against (e.g. pinning the task's starting commit) is a change to the QA
+  lap, not to the execute loop, and none of this task's acceptance criteria depend on it.
+- But it must not be silent. When a task has passed through at least one operator gate, the QA
+  prompt is told so and told which gates, and the QA report states its own coverage up front:
+  "This task paused at G1 (PRs merged into main). Work merged before that gate is outside this
+  diff and was not reviewed here."
+- `docs/how-it-works.md` lists this as a known limitation of operator gates, and a follow-up
+  task ("QA scope survives mid-task merges") is created alongside the guard follow-up from Q6.
+
 ---
 
 # Complete
 
-- [ ] Ready to advance to Product Review
+- [x] Ready to advance to Product Review
