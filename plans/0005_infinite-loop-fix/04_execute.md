@@ -40,7 +40,8 @@ entry, the delegation and the null-next guard go in **one commit**. See `03_plan
 For each milestone, in order:
 
 1. Take the **first unfinished row** in the Execution Status table. Do not skip, do not reorder.
-2. Set that row's status to `in_progress`.
+2. Leave the row `pending` while you work on it. **This playbook uses `pending` and `done` only
+   — never `in_progress`** (see the note under Execution Status; it is a live hazard, not style).
 3. Read the milestone's section in `03_plan.md` — it carries the file paths, function signatures
    and data structures. Implement **all** of its numbered tasks, and nothing outside them.
 4. Write the tests listed under that milestone's **Test requirements**. Tests land in the same
@@ -69,8 +70,9 @@ For each milestone, in order:
   behaviour being removed, and replaces them with a strictly larger set.
 - **`guard.ts` is not touched by any milestone.** "Guardrails unchanged" is a constraint of this
   task (AC21), not an oversight. A finding that needs a guard change becomes a follow-up.
-- **M8 changes no code.** `git show --stat` for its commit must list only `docs/security.md`,
-  `SECURITY.md` and `README.md` (AC22).
+- **M8 changes no code**, tested as **no path under `src/`** (AC22). Not an exact file list:
+  `commitAll` runs `git add .`, so every milestone commit also carries this playbook, and often
+  `state.yml` and `03_plan.md`.
 - **No version bump, no release.** Releases are the cleanup lap's and the operator's business; a
   mid-execution bump would make M8's declaration describe a version that does not exist yet.
 - **No new runtime dependencies.** Nothing is added to `package.json`.
@@ -106,6 +108,7 @@ happens.
 | Commit M5 | pipeline | The driver's own `commitAll` |
 | **Ctrl-C** | **operator, at the terminal** | The agent session is a *child* of the `drive` process; it cannot interrupt its own parent. This step can never be an agent task |
 | `git status`, discard partial M6 work | **operator** | Not optional — see below |
+| `npm run build` | **operator** | The interrupted M6 session may already have rebuilt `dist/` from its partial work; rebuild from the clean tree so the bundle is M5's |
 | `vibe-racer drive` | **operator** | New bundle, new loop, M6 onward |
 
 **There is no quiet gap to interrupt in.** The old loop runs `commitAll` → `readFile` → build
@@ -115,21 +118,42 @@ is why the discard step exists. State is safe either way — `ready_to_execute`,
 unfinished — but the **working tree** is not, and without the sweep the restarted loop runs M6 on
 top of uncommitted partial M6 work. The cue to watch for is the `Executing milestone 6` line.
 
-**If you miss the window, nothing is broken.** M6–M8 complete under the old loop, which handles
-them fine (the table is well-formed and none of them pause); the only thing lost is the live
-exercise. Treat this as a deliberate choice, not a crash and not a required step.
+**The cutover is the expected path; missing it is survivable, not free.** M6–M8 can complete under
+the old loop (the table is well-formed and none of them pause), but they then run with the old
+loop's two live hazards: the execute prompt in force still tells the agent to set `in_progress`
+(`prompts.ts:499`), which on M8 ends the task early (see the note under Execution Status), and any
+stray pipe-delimited pending text in this file keeps the loop alive forever. If you do miss the
+window, watch the run to the end: after M8 the next line must be "All milestones complete", not
+another "Executing milestone …".
 
 **The escape hatch is unchanged, for every milestone.** M1–M5 all run under the old, unbounded
 loop. If one of them stalls, Ctrl-C leaves the task at `ready_to_execute` with the first unfinished
-row intact — then `git status` before driving again, because `state.yml` survives an interrupt and
-the working tree does not.
+row intact — then `git status`, discard partial work, and `npm run build` before driving again,
+because `state.yml` survives an interrupt and neither the working tree nor the linked `dist/`
+bundle does.
 
 ---
 
 ## Execution Status
 
-Status values: `pending`, `in_progress`, `done`. (`blocked` is removed by this task; it is not
-used here.) Owner column deliberately absent — see "Operator gates in this plan" above.
+Status values **in this playbook**: `pending` and `done`, nothing else. Owner column deliberately
+absent — see "Operator gates in this plan" above. (`blocked` is removed by this task.)
+
+**Why no `in_progress` here, when the contract has it.** This file is read by the **old** loop,
+whose termination check is `countPendingMilestones` — a regex that counts cells whose status is
+pending (`execute.ts:12-14`) and does not match `in_progress`. So a session that sets the **last**
+remaining `pending` row to `in_progress` and then ends without reaching `done` leaves the loop
+reading `pending === 0`: it breaks, fires `updateStage(ai_qa)`, and the milestone is silently
+skipped while the task announces "All milestones complete". The exposed row is **M8**. The cutover
+is optional and skippable, so this file cannot assume the new loop will be the one reading it.
+`in_progress` stays in `MILESTONE_STATUSES` for playbooks written by M6's prompt, where
+`firstUnfinished` is `status !== "done"` and the distinction is free.
+
+**The same regex scans this whole file, not just the table.** Any text anywhere in this playbook
+that puts the word pending between two pipe characters — in prose, in a Notes cell, in pasted
+test output — is counted as an unfinished milestone, and under the old loop the task then never
+terminates after M8. Never write that shape outside the Status column. When pasting evidence into
+a Notes cell (M5, M8), strip or reword any such text first.
 
 | Milestone | Name | Status | Commit | Notes |
 |---|---|---|---|---|
@@ -139,8 +163,8 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | M4 | Operator surfaces | `pending` | | `currentBranch` lands here, not M5 (plan D1) |
 | M5 | The loop | `pending` | | AC1 test FIRST; paste the evidence-run output here; then the dry read; then `npm run build`. Operator cutover is optional — see "Operator interrupt at M5" |
 | M6 | Prompts | `pending` | | Contract test lands here |
-| M7 | Docs + housekeeping | `pending` | | CHANGELOG entry belongs to THIS task, not the cleanup lap — cleanup must not add a second entry |
-| M8 | Security declaration review | `pending` | | DOCS ONLY. Record `git show --stat` here as AC22 evidence |
+| M7 | Docs + housekeeping | `pending` | | CHANGELOG entry belongs to THIS task, not the cleanup lap — cleanup must not add a second entry. Follow-ups: `vibe-racer new` WITHOUT `--desc` (it pre-ticks the objective and the next `drive` would start a paid lap on them) |
+| M8 | Security declaration review | `pending` | | DOCS ONLY. Paste `git status --short` (run **before** the commit) here as AC22 evidence — no path under `src/` |
 
 ---
 
@@ -153,7 +177,7 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | New files | `src/pipeline/execute-table.ts`, `tests/pipeline/execute-table.test.ts`, `tests/fixtures/playbooks/` (7 fixtures) |
 | Modified files | none |
 | Key exports | `parseExecutionStatus`, `setMilestoneStatus`, `firstUnfinished`, `rowStatus`, `operatorGates`, `pendingAgentRows`, `doneCount`, `hasOwnerColumn`, `ExecutionTableError`, `MILESTONE_STATUSES`, `OWNERS`, `EXECUTION_TABLE_SPEC` |
-| Fixtures | Real `## Execution Status` sections from `plans/0002`, `0003`, `0004` — copied, never read live — plus `no-heading`, `unknown-status`, `legacy-blocked`, `pending-in-summary-only` |
+| Fixtures | Real `## Execution Status` sections from `plans/0002`, `0003`, `0004` — copied, never read live — plus `no-heading`, `unknown-status`, `legacy-blocked`, `pending-in-summary-only`. The last is full-file shaped and must also carry **prose between the heading and the table**, which is this playbook's own shape |
 | Validation | Parses all three real tables incl. `plans/0004`'s `M5a`/`M5b` IDs and prose Notes; every throw asserts its message text; `EXECUTION_TABLE_SPEC`'s example round-trips |
 | Commit message | `vibe-racer: M1 for #5` |
 
@@ -173,7 +197,7 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | Item | Detail |
 |---|---|
 | New files | none |
-| Modified files | `src/state/schema.ts`, `src/pipeline/states.ts`, `src/state/store.ts`, `src/state/discovery.ts`, `src/state/advancement.ts`, `src/cli/drive.ts` (call-site fix only), + `states.test.ts`, `store.test.ts`, `advancement.test.ts` |
+| Modified files | `src/state/schema.ts`, `src/pipeline/states.ts`, `src/state/store.ts`, `src/state/discovery.ts`, `src/state/advancement.ts`, `src/cli/drive.ts` (call-site fix only), + `states.test.ts`, `store.test.ts`, `advancement.test.ts`, `radio.test.ts` |
 | Key exports | `pauseForOperator`, `resumeFromOperator`, `clearResumedAt`, `validStage`, `StageQuestions`, `resumeFromOperatorPause` |
 | One commit | The `STAGE_QUESTIONS_FILE` map entry, the `tryAdvance` delegation and the null-next guard (H1) |
 | Three call sites | `advancement.ts:24`, `drive.ts:100-101`, `states.test.ts:95-103` — all switch to `?.file` |
@@ -186,7 +210,7 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | Item | Detail |
 |---|---|
 | New files | none |
-| Modified files | `src/git/operations.ts`, `src/cli/drive.ts`, `src/cli/pitwall.ts`, + `drive.test.ts`, `pitwall.test.ts`, `radio.test.ts` |
+| Modified files | `src/git/operations.ts`, `src/cli/drive.ts`, `src/cli/pitwall.ts`, + `drive.test.ts`, `pitwall.test.ts` |
 | Key export | `currentBranch(git)` |
 | Validation | Paused tasks render under "Waiting on operator" once, with milestone, reason and file; the hint names the real resume marker; neither "error" nor "failed" appears; `--retry` does not select them; `radio` accepts a paused task |
 | Watch for | `pitwall`'s `humanTasks` must now **exclude** `need_operator`, and its empty-state check must count paused tasks |
@@ -200,7 +224,7 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | Modified files | `src/pipeline/handlers/execute.ts` (rewritten), `src/git/operations.ts`, `tests/pipeline/handlers/execute.test.ts` (rewritten) |
 | Key exports | `decideNextStep`, `foldOutcome`, `thresholdFor`, `sessionCap`, `MAX_STALLED_SESSIONS`, `SESSION_CAP_SLACK`, `repoSnapshot` |
 | Deleted | `countPendingMilestones`, the `milestone++` counter, the `agent already committed` log line. No shim |
-| Order within the milestone | 1. AC1 test. 2. Evidence run against the OLD handler on a scratch commit, stubbing `runAndStream` **and** `commitAll`, output pasted into the Notes cell. 3. `repoSnapshot`. 4. Rewrite. 5. Suite green. 6. Dry read of this file with the new parser. 7. `npm run build` |
+| Order within the milestone | 1. AC1 test. 2. Evidence run against the OLD handler — before rewriting it, nothing committed — stubbing `runAndStream` **and** `commitAll`, with the `runAndStream` stub **throwing after 50 calls** (a timeout cannot fire: see `03_plan.md` M5 task 2), output pasted into the Notes cell. 3. `repoSnapshot`. 4. Rewrite. 5. Suite green. 6. Dry read of this file with the new parser. 7. `npm run build` |
 | Validation | `runAndStream` called **exactly twice** on an unchanged table, then `stage: need_operator` with the agent's final message in this file; never called for a planned gate; an unparsable table throws and `ai_qa` is never written |
 | Commit message | `vibe-racer: M5 for #5` |
 
@@ -219,7 +243,7 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 
 | Item | Detail |
 |---|---|
-| New files | three follow-up task folders, created with `vibe-racer new` |
+| New files | three follow-up task folders, created with `vibe-racer new "<title>"` — **no `--desc`**; write each `00_objective.md` by hand and leave its checkbox **unticked** |
 | Modified files | `CLAUDE.md`, `docs/how-it-works.md`, `CHANGELOG.md` |
 | Deleted files | `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md` — the **last** act of this milestone |
 | Follow-ups | 1. Guard enforces the no-push rule (`git fetch` / `gh pr view` / `gh pr list` must stay allowed). 2. QA scope survives mid-task merges. 3. `drive` operates on the task branch |
@@ -231,11 +255,11 @@ used here.) Owner column deliberately absent — see "Operator gates in this pla
 | Item | Detail |
 |---|---|
 | New files | none |
-| Modified files | `docs/security.md`, `SECURITY.md`, `README.md` — **and nothing else** |
+| Modified files | `docs/security.md`, `SECURITY.md`, `README.md` — **and nothing under `src/`**. The pipeline's `git add .` will also sweep in this playbook; that is expected, not a violation |
 | Findings to resolve | S1 (18 blocked commands, not 19) · S2 (`radio` is not a guarded session and is absent from the declaration) · S3 (root `SECURITY.md` predates 0.3.0) · S4 (no-push is prompt-only → Known Limitations, naming follow-up 1) |
 | Additions | `need_operator` as a human stage · gate verification uses the network vs the `--network none` recommendation · agent prose is committed but quoted inertly and secret-scanned · the execute session's `Edit` on this file is normalised, not trusted |
-| Boundary | Docs only. A finding needing a code change becomes a fourth follow-up, named in Known Limitations |
-| Validation | `git show --stat HEAD` lists exactly three documentation files — pasted into the Notes cell as AC22 evidence |
+| Boundary | Docs only. A finding needing a code change is **recorded in Known Limitations as a fourth follow-up for the operator to create** — M8 cannot run `vibe-racer new`, which would write a new plan folder and break its own docs-only rule |
+| Validation | `git status --short`, run **before** the pipeline commits, shows no path under `src/` — pasted into the Notes cell as AC22 evidence. **Not `git show --stat HEAD`**: the pipeline commits after the session returns, so `HEAD` is still M7's commit while the agent can observe it |
 | Commit message | `vibe-racer: M8 for #5` |
 
 ---

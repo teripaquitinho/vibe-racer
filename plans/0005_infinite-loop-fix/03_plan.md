@@ -300,13 +300,17 @@ interpolate its spec without a cycle (§15).
    | `no-heading.md` | synthetic | Throw: no `Execution Status` heading |
    | `unknown-status.md` | synthetic | Throw naming line + value (AC12) |
    | `legacy-blocked.md` | synthetic | `blocked` → `needs_operator` + `legacyBlocked` (AC11) |
-   | `pending-in-summary-only.md` | synthetic | **E3** — front matter, prose, and a Milestone Summary table *above* the `## Execution Status` heading |
+   | `pending-in-summary-only.md` | synthetic | **E3** — front matter, prose, and a Milestone Summary table *above* the `## Execution Status` heading, **and a prose paragraph between that heading and its table** |
 
    Copy the `## Execution Status` **section only**, not the whole playbook. Each fixture opens
    with an HTML comment naming its source path and the commit it was taken from.
    `pending-in-summary-only.md` is the one that carries full-file shape — every other fixture is a
    bare status section, which never exercises "scan for the **first** matching heading". A parser
-   that simply grabs the first pipe table in the file passes all the others.
+   that simply grabs the first pipe table in the file passes all the others. It must also put a
+   **prose paragraph between the heading and the table**, because that is the shape of this task's
+   own `04_execute.md`: a parser that treats the first blank line after the heading as the end of
+   the table would pass every other fixture here and then fail M5's dry read — four milestones
+   after this parser froze.
    **Tests never read `plans/` at run time**: a consumer repo has different plans, and this very
    task appends pause blocks to `plans/0005/04_execute.md`.
 
@@ -688,6 +692,11 @@ agent prose structurally inert, so a session cannot resume its own task through 
 - **The generic path returns `advanced: false` for a stage with no next stage** — written so it
   fails if the `need_operator` delegation is ever removed (H1 regression test).
 
+**`tests/cli/radio.test.ts`** (extend) — `radio` accepts a `need_operator` task as eligible. This
+lands here, not in M4: `radio` filters on `isHumanStage` (`radio.ts:60`), which starts returning
+`true` for `need_operator` the moment `NON_LINEAR_STAGES` lands in this milestone. Nothing breaks
+in between — no task can pause until M5 — but the test belongs beside the change that causes it.
+
 ---
 
 ## 6. M4 — Operator surfaces
@@ -783,8 +792,6 @@ one. Cost of this ordering: zero. Cost of skipping it: a paused task that render
 - The branch hint appears only when nothing is actionable, the current branch is not
   `vibe-racer/*`, and such branches exist.
 
-**`tests/cli/radio.test.ts`** (extend) — `radio` accepts a `need_operator` task as eligible.
-
 ---
 
 ## 7. M5 — The loop
@@ -827,7 +834,23 @@ they cover, per the project's existing convention.
    `readFile → runAndStream → commitAll` (`execute.ts:22-44`), so a stub on `runAndStream` alone
    leaves a real `git add .` + commit firing every iteration against this repository until the
    timeout — hundreds of junk commits on the task branch, in the milestone whose whole job is a
-   clean cutover. Paste the captured output into M5's Notes cell in `04_execute.md`. That is the
+   clean cutover.
+
+   **Do not rely on the timeout to end this run — it cannot fire.** This test file mocks
+   `fs/promises` `readFile` with an already-resolved promise (the existing convention), so with
+   `runAndStream` and `commitAll` stubbed too, the old `while (true)` awaits nothing but resolved
+   promises: a pure microtask spin that never yields to the timers phase. Vitest's per-test
+   timeout is a timer, so the worker pegs a core and grows `mock.calls` until the Bash tool kills
+   it or Node runs out of heap. **For the evidence run, make the `runAndStream` stub throw after
+   50 calls** (`"old loop: 50 sessions on an unchanged table"`), and record that error. It is
+   deterministic, finishes in milliseconds, and is better evidence than a timeout. The committed
+   AC1 test keeps its `{ timeout: 5_000 }` — the new loop terminates on its own, so there the
+   timeout is only a backstop. "Scratch" means *run before the rewrite and commit nothing* — no
+   scratch branch, no `git stash`, no reset.
+
+   Paste the captured output into M5's Notes cell in `04_execute.md` — **after stripping any text
+   that puts the word pending between two pipes**: the old loop counts that shape anywhere in the
+   playbook and would then never terminate. That is the
    artefact QA reads to verify AC1 — a test that hangs cannot be committed, but "would have hung"
    is the whole claim of this task.
 
@@ -1206,7 +1229,11 @@ tasks — no hand-written plan folders.
    operator's business, and a mid-execution version bump would make M8's declaration describe a
    version that does not exist yet.
 
-4. **Create the three follow-up tasks** with `vibe-racer new`:
+4. **Create the three follow-up tasks** with `vibe-racer new "<title>"` — **without `--desc`**.
+   `--desc` pre-ticks "Ready to advance to Objective Review" (`new.ts:20`), so the operator's next
+   `drive` would advance all three and offer paid objective-review laps alongside #5's QA lap.
+   Write each `00_objective.md` by hand from the text below and leave its checkbox **unticked** —
+   when to start a follow-up is the operator's decision:
    1. **"Guard enforces the no-push rule"** — a `ready_to_execute` deny list for `git push`,
       `gh pr create`, `gh pr merge`, `gh release`, `gh workflow run`. **The read-only allowances
       `git fetch`, `gh pr view`, `gh pr list` are a hard requirement**, called out in the
@@ -1240,10 +1267,15 @@ The declaration describes the code **as shipped**. Strictly last, strictly docs-
 ### Boundaries — these are the milestone's acceptance conditions
 
 - **This milestone changes no code.** "Guardrails unchanged" is a constraint of this task, and a
-  code change in the final milestone would invalidate it. `git diff` for this commit must touch
-  only `docs/security.md`, `SECURITY.md` and `README.md`.
-- A finding that needs a code change becomes a **fourth follow-up task**, named in Known
-  Limitations. It does not get fixed here.
+  code change in the final milestone would invalidate it. The test is **no path under `src/`**,
+  not an exact file list: `commitAll` runs `git add .` (`operations.ts:34`), so every milestone
+  commit also carries `04_execute.md`, and often `state.yml` and `03_plan.md` — verified against
+  real history (`167e6a4`, `10aa0aa`). The three documents this milestone *intends* to touch are
+  `docs/security.md`, `SECURITY.md` and `README.md`.
+- A finding that needs a code change is **recorded in Known Limitations as a fourth follow-up for
+  the operator to create**. It does not get fixed here, and M8 does not run `vibe-racer new`
+  either — that writes a new plan folder, which would break this milestone's own docs-only rule.
+  (M7 creates follow-ups 1–3; M7 runs before M8, so a finding surfacing here has missed it.)
 - `CHANGELOG.md` history is not rewritten (0.1.0 may keep saying 19); M7's entry notes the
   correction.
 
@@ -1282,8 +1314,11 @@ The declaration describes the code **as shipped**. Strictly last, strictly docs-
 ### Test requirements
 
 - Full suite green, build green, lint green — unchanged from M7, since no code moved.
-- **`git show --stat HEAD` for this commit lists only the three documentation files.** That is the
-  evidence for AC22's "changed no code" clause, and it goes in M8's Notes cell.
+- **`git status --short`, run before the pipeline commits, shows no path under `src/`.** That is
+  the evidence for AC22's "changed no code" clause, and it goes in M8's Notes cell.
+  **Not `git show --stat HEAD`.** The pipeline commits *after* the session returns
+  (`execute.ts:38`), so while the M8 agent can observe anything, `HEAD` is still **M7's** commit —
+  its own commit does not exist yet. `git diff --stat HEAD` works too; `git show` does not.
 
 ---
 
@@ -1449,4 +1484,4 @@ so explicitly.
 | 19 QA states coverage | M6 | `prompts.test.ts`, `qa.test.ts` |
 | 20 `(file, marker)` invariant | M3 (test) + M7 (`CLAUDE.md`, deletion) | `states.test.ts` |
 | 21 Guard unchanged | all — **no milestone touches `guard.ts`** | `git diff` + `how-it-works.md` (M7) |
-| 22 Security declaration reviewed | **M8** | `git show --stat` lists only three doc files |
+| 22 Security declaration reviewed | **M8** | `git status --short` before the commit shows no path under `src/` |
