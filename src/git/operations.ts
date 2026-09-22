@@ -91,6 +91,46 @@ export async function currentBranch(git: SimpleGit): Promise<string> {
   }
 }
 
+export interface RepoSnapshot {
+  /** `""` when there is no commit yet — an unborn branch is not an error here. */
+  head: string;
+  /** Every path git considers untracked, changed or staged. Sorted, de-duplicated. */
+  dirtyFiles: string[];
+}
+
+/**
+ * What the repository looks like right now — the two halves of "did anything happen".
+ *
+ * `ignorePrefix` drops paths under one directory, which the execute loop sets to the task's
+ * plan dir: the agent flipping its own status cell must not read as work done on the codebase.
+ */
+export async function repoSnapshot(
+  git: SimpleGit,
+  ignorePrefix?: string,
+): Promise<RepoSnapshot> {
+  let head = "";
+  try {
+    head = (await git.revparse(["HEAD"])).trim();
+  } catch {
+    head = "";
+  }
+
+  const status = await git.status();
+  const paths = [
+    ...status.not_added,
+    ...status.created,
+    ...status.modified,
+    ...status.deleted,
+    ...status.renamed.map((r) => r.to),
+    ...status.staged,
+  ];
+
+  const kept = paths.filter(
+    (p) => typeof p === "string" && p !== "" && !(ignorePrefix && p.startsWith(ignorePrefix)),
+  );
+  return { head, dirtyFiles: [...new Set(kept)].sort() };
+}
+
 export async function getRemoteUrl(git: SimpleGit): Promise<string | null> {
   try {
     const remotes = await git.getRemotes(true);
