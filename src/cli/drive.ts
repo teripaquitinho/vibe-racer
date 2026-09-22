@@ -5,10 +5,18 @@ import { discoverTasks } from "../state/discovery.js";
 import { tryAdvance } from "../state/advancement.js";
 import { readState, updateStage, validStage } from "../state/store.js";
 import { isAgentStage, isHumanStage, STAGE_QUESTIONS_FILE, STAGE_NEXT_NAME } from "../pipeline/states.js";
-import { createGit, checkoutBranch, commitAll, SecretDetectedError } from "../git/operations.js";
+import {
+  createGit,
+  checkoutBranch,
+  commitAll,
+  currentBranch,
+  getVibeRacerBranches,
+  SecretDetectedError,
+} from "../git/operations.js";
 import { taskBranchName, taskPlanFolder } from "../git/slug.js";
 import { dispatch } from "../pipeline/machine.js";
 import type { TaskContext } from "../pipeline/types.js";
+import type { Task } from "../state/discovery.js";
 import { log } from "../utils/logger.js";
 import { selectTask } from "./task-select.js";
 import type { Stage } from "../state/schema.js";
@@ -34,6 +42,37 @@ async function finalizeTask(taskNumber: number, title: string, cwd: string): Pro
   }
   log.success(`Task #${taskNumber} pipeline complete!`);
   log.dim(`Merge ${branchName} when ready — vibe-racer never pushes.`);
+}
+
+/** The playbook the operator ticks, written repo-relative because that is what they can click. */
+function operatorFile(task: Task, cwd: string): string {
+  const file = STAGE_QUESTIONS_FILE.need_operator?.file ?? "04_execute.md";
+  return path.join(path.relative(cwd, task.planPath), file);
+}
+
+/** Milestone and reason on one line — never the agent's whole message (§7.3). */
+function pauseSummary(task: Task): string {
+  const parts = [task.operatorMilestone, task.operatorReason].filter(
+    (p): p is string => p !== undefined && p.trim() !== "",
+  );
+  return parts.length === 0 ? "" : ` — ${parts.join(": ")}`;
+}
+
+/**
+ * E17, legibility half. `drive` runs the advancement pass on whatever branch is checked out, and
+ * at a gate the operator has usually just been on `main` merging PRs — where this task's
+ * `state.yml` is older or absent, so their tick is invisible. Reordering `drive` to check out
+ * first is the real fix and is a follow-up; this makes the silence explicable.
+ */
+async function branchHint(cwd: string): Promise<void> {
+  const git = createGit(cwd);
+  const branches = await getVibeRacerBranches(git);
+  if (branches.length === 0) return;
+  if ((await currentBranch(git)).startsWith("vibe-racer/")) return;
+  log.dim(
+    "Task state lives on each task's branch — if you paused a task, check out its " +
+      "`vibe-racer/…` branch and run `drive` again.",
+  );
 }
 
 export async function driveCommand(opts: {
@@ -64,7 +103,14 @@ export async function driveCommand(opts: {
         cwd,
       );
       if (result.advanced) {
-        log.success(`Task #${task.number} advanced from [${task.stage}]`);
+        // A pause is not a pit stop: it returns to the stage it left, so "advanced from
+        // [need_operator]" would describe a step the pipeline never took.
+        if (result.reason === "resumed") {
+          const where = task.operatorMilestone ? ` at ${task.operatorMilestone}` : "";
+          log.success(`Task #${task.number} resumed — continuing execution${where}`);
+        } else {
+          log.success(`Task #${task.number} advanced from [${task.stage}]`);
+        }
         task.stage = readState(task.planPath).stage;
         if (task.stage === "done") {
           await finalizeTask(task.number, task.title, cwd);
@@ -76,9 +122,13 @@ export async function driveCommand(opts: {
   const filter = (stage: Stage) =>
     isAgentStage(stage) || (opts.retry === true && stage === "error");
 
-  const ineligibleMessage = (t: { number: number; stage: Stage }) => {
+  const ineligibleMessage = (t: Task) => {
     if (t.stage === "error" && !opts.retry) {
       return `Task #${t.number} is in error state. Use --retry to reprocess.`;
+    }
+    // A pause is the pipeline working as designed, so this says neither "error" nor "failed".
+    if (t.stage === "need_operator") {
+      return `Task #${t.number} is paused waiting on the operator — see ${operatorFile(t, cwd)}.`;
     }
     return `Task #${t.number} is at [${t.stage}] — waiting on human, not agent.`;
   };
@@ -93,7 +143,21 @@ export async function driveCommand(opts: {
 
   if (!selected) {
     if (opts.task === undefined) {
-      const humanTasks = tasks.filter((t) => isHumanStage(t.stage));
+      // Operator first: a pause blocks a lap that was already paid for.
+      const operatorTasks = tasks.filter((t) => t.stage === "need_operator");
+      const humanTasks = tasks.filter(
+        (t) => isHumanStage(t.stage) && t.stage !== "need_operator",
+      );
+
+      if (operatorTasks.length > 0) {
+        log.dim("Waiting on operator:");
+        for (const t of operatorTasks) {
+          const marker = STAGE_QUESTIONS_FILE.need_operator?.markerText ?? "the resume checkbox";
+          log.dim(`  #${t.number} [${t.stage}]${pauseSummary(t)}`);
+          log.dim(`     → tick "${marker}" in ${operatorFile(t, cwd)}`);
+        }
+      }
+
       if (humanTasks.length > 0) {
         log.dim("Waiting on human input:");
         for (const t of humanTasks) {
@@ -102,9 +166,13 @@ export async function driveCommand(opts: {
           const hint = nextName ? `"Ready to advance to ${nextName}"` : "the checkbox";
           log.dim(`  #${t.number} [${t.stage}] — tick ${hint} in ${qFile ?? "the questions file"}`);
         }
-      } else {
+      }
+
+      if (operatorTasks.length === 0 && humanTasks.length === 0) {
         log.dim("Nothing to do.");
       }
+
+      await branchHint(cwd);
     }
     return;
   }

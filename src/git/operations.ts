@@ -76,6 +76,21 @@ export async function getVibeRacerBranches(
   return branches.all.filter((b) => b.startsWith("vibe-racer/"));
 }
 
+/**
+ * The checked-out branch, or `""` on a detached HEAD or a repo with no branches yet.
+ *
+ * Its only caller is `drive`'s nothing-to-do hint, which runs after every other decision has
+ * been made — a throw there would turn a cosmetic line into a failed command, so it never throws.
+ */
+export async function currentBranch(git: SimpleGit): Promise<string> {
+  try {
+    const branches = await git.branchLocal();
+    return branches.current ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export async function getRemoteUrl(git: SimpleGit): Promise<string | null> {
   try {
     const remotes = await git.getRemotes(true);
