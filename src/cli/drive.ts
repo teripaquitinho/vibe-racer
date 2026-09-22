@@ -3,7 +3,7 @@ import { loadConfig } from "../config/loader.js";
 import { checkPrerequisites } from "../config/prerequisites.js";
 import { discoverTasks } from "../state/discovery.js";
 import { tryAdvance } from "../state/advancement.js";
-import { readState, updateStage } from "../state/store.js";
+import { readState, updateStage, validStage } from "../state/store.js";
 import { isAgentStage, isHumanStage, STAGE_QUESTIONS_FILE, STAGE_NEXT_NAME } from "../pipeline/states.js";
 import { createGit, checkoutBranch, commitAll, SecretDetectedError } from "../git/operations.js";
 import { taskBranchName, taskPlanFolder } from "../git/slug.js";
@@ -11,7 +11,7 @@ import { dispatch } from "../pipeline/machine.js";
 import type { TaskContext } from "../pipeline/types.js";
 import { log } from "../utils/logger.js";
 import { selectTask } from "./task-select.js";
-import { STAGES, type Stage } from "../state/schema.js";
+import type { Stage } from "../state/schema.js";
 
 /**
  * Commit the last advancement. Every other stage gets its state.yml write swept up by the
@@ -97,7 +97,7 @@ export async function driveCommand(opts: {
       if (humanTasks.length > 0) {
         log.dim("Waiting on human input:");
         for (const t of humanTasks) {
-          const qFile = STAGE_QUESTIONS_FILE[t.stage];
+          const qFile = STAGE_QUESTIONS_FILE[t.stage]?.file;
           const nextName = STAGE_NEXT_NAME[t.stage];
           const hint = nextName ? `"Ready to advance to ${nextName}"` : "the checkbox";
           log.dim(`  #${t.number} [${t.stage}] — tick ${hint} in ${qFile ?? "the questions file"}`);
@@ -135,8 +135,9 @@ export async function driveCommand(opts: {
 
   if (task.stage === "error") {
     const errorStage = readState(task.planPath).error_stage;
-    if (errorStage && (STAGES as readonly string[]).includes(errorStage)) {
-      target = errorStage as Stage;
+    const retryStage = validStage(errorStage);
+    if (retryStage) {
+      target = retryStage;
       updateStage(task.planPath, target);
       log.info(`Retrying task #${task.number} from [${target}]`);
     } else {

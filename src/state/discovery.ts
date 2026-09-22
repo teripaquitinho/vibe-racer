@@ -10,6 +10,9 @@ export interface Task {
   stage: Stage;
   planPath: string;
   trivial?: boolean;
+  // Carried on the task, exactly as `trivial` is, so the CLI layer never parses plan files.
+  operatorReason?: string;
+  operatorMilestone?: string;
 }
 
 const PLAN_DIR_PATTERN = /^(\d{4})_(.+)$/;
@@ -38,6 +41,8 @@ export function discoverTasks(plansDir: string): Task[] {
         stage: state.stage,
         planPath,
         trivial: state.trivial,
+        operatorReason: state.operator_reason,
+        operatorMilestone: state.operator_milestone,
       });
     } catch {
       // Skip folders with invalid state.yml

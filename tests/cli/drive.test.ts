@@ -20,10 +20,15 @@ vi.mock("../../src/state/advancement.js", () => ({
   tryAdvance: vi.fn().mockResolvedValue({ advanced: false, reason: "no_marker" }),
 }));
 
-vi.mock("../../src/state/store.js", () => ({
-  readState: vi.fn().mockReturnValue({ stage: "need_objective" }),
-  updateStage: vi.fn(),
-}));
+vi.mock("../../src/state/store.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/state/store.js")>();
+  return {
+    readState: vi.fn().mockReturnValue({ stage: "need_objective" }),
+    updateStage: vi.fn(),
+    // Pure, and the retry path's stage check now goes through it.
+    validStage: actual.validStage,
+  };
+});
 
 class MockSecretDetectedError extends Error {}
 
