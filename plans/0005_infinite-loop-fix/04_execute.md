@@ -157,13 +157,13 @@ a Notes cell (M5, M8), strip or reword any such text first.
 
 | Milestone | Name | Status | Commit | Notes |
 |---|---|---|---|---|
-| M1 | Table contract + parser | `pending` | | |
+| M1 | Table contract + parser | `done` | | Under the heading, skip a table that resolves neither `Milestone` nor `Status` (plan D8, `two-tables.md` fixture). `pendingAgentRows` = unfinished agent rows, not only the not-started status (plan D9). New `trailingOperatorRows` (plan D11). **Shipped:** `src/pipeline/execute-table.ts` + all 12 exports, 7 fixtures under `tests/fixtures/playbooks/`, 36 tests in `tests/pipeline/execute-table.test.ts`. Suite 32 files / 485 tests green (baseline 31 / 449). **For M3/M5:** `ExecutionTableError.line` is **1-based** (human-facing, pairs with `file`) while `MilestoneRow.lineIndex` is **0-based** (it indexes `content.split("\n")`). `setMilestoneStatus` and `rowStatus` match IDs case-insensitively. `splitRowSpans` is the single cell-boundary routine — it honours `\|` escapes and backtick spans, and `setMilestoneStatus` writes through its spans so escapes survive byte-for-byte. **Trap for M6:** `EXECUTION_TABLE_SPEC` opens with `### The milestone status table`, not with its own name — a heading containing the status-heading text would be matched first by the parser and its worked example would stop round-tripping. Any prompt that wraps the spec in a heading must respect the same rule. |
 | M2 | Pause-block format | `pending` | | |
-| M3 | State layer + resume path | `pending` | | Map entry + delegation + null-next guard in ONE commit (hazard H1) |
+| M3 | State layer + resume path | `pending` | | Map entry + delegation + null-next guard in ONE commit (hazard H1). Sign-off refuses a trailing operator row — the ONE blocking check at `need_execution` (plan D11) |
 | M4 | Operator surfaces | `pending` | | `currentBranch` lands here, not M5 (plan D1) |
-| M5 | The loop | `pending` | | AC1 test FIRST; paste the evidence-run output here; then the dry read; then `npm run build`. Operator cutover is optional — see "Operator interrupt at M5" |
-| M6 | Prompts | `pending` | | Contract test lands here |
-| M7 | Docs + housekeeping | `pending` | | CHANGELOG entry belongs to THIS task, not the cleanup lap — cleanup must not add a second entry. Follow-ups: `vibe-racer new` WITHOUT `--desc` (it pre-ticks the objective and the next `drive` would start a paid lap on them) |
+| M5 | The loop | `pending` | | AC1 test FIRST; paste the evidence-run output here; then the dry read; then `npm run build`. Operator cutover is optional — see "Operator interrupt at M5". Dry read (task 15) covers the named consumer playbooks as well as this one. Trailing operator rows END the lap, they never gate it (plan D11) |
+| M6 | Prompts | `pending` | | Contract test lands here. Plan prompt must forbid merge / tag / release / deploy rows and require every gate row to be followed by the milestone it unblocks (plan D11) |
+| M7 | Docs + housekeeping | `pending` | | CHANGELOG entry belongs to THIS task, not the cleanup lap — cleanup must not add a second entry. Follow-ups: `vibe-racer new` WITHOUT `--desc` (it pre-ticks the objective and the next `drive` would start a paid lap on them). `how-it-works.md` gains "Upgrading a playbook that predates operator gates" (plan D10) |
 | M8 | Security declaration review | `pending` | | DOCS ONLY. Paste `git status --short` (run **before** the commit) here as AC22 evidence — no path under `src/` |
 
 ---
@@ -289,4 +289,4 @@ a Notes cell (M5, M8), strip or reword any such text first.
 
 # Complete
 
-- [ ] Ready to advance to Execution
+- [x] Ready to advance to Execution

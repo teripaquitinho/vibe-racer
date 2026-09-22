@@ -221,10 +221,14 @@ interpolate its spec without a cycle (§15).
 3. **`parseExecutionStatus(content: string, file = EXECUTION_PLAYBOOK_FILE): ExecutionTable`** (§3.3).
 
    - **Locate the table.** Scan for the first markdown heading (`/^#{1,6}\s+(.*)$/`) whose text
-     contains `EXECUTION_STATUS_HEADING` case-insensitively. Take the first pipe table after it.
-     The table ends at the first blank line or the next heading. **Nothing outside that table is
-     ever read** — this alone fixes E3 (a `pending` in the Milestone Summary table or in prose
-     keeping the loop alive).
+     *contains* `EXECUTION_STATUS_HEADING` case-insensitively — so `## 5. Execution Status` and
+     `### Execution status` both qualify. Then walk the pipe tables under that heading **in order**
+     and take the first whose header row resolves **both** a `Milestone` and a `Status` column
+     (D8). A table resolving neither, or only one, is **skipped, not an error**: a hand-written
+     playbook may put a checkpoint or sign-off table under the same heading, and the reported case
+     did. The search stops at the next heading of any level; each table ends at the first blank
+     line or the next heading. **Nothing outside the chosen table is ever read** — this alone fixes
+     E3 (a `pending` in the Milestone Summary table or in prose keeping the loop alive).
    - **Split cells with `splitRow(line: string): string[]`** (module-private): honours `\|`
      escapes and backtick spans. A naive `line.split("|")` breaks on `plans/0004`, whose Notes
      cells hold prose with inline code.
@@ -245,9 +249,9 @@ interpolate its spec without a cycle (§15).
    |---|---|
    | No "Execution Status" heading | the file, and that the heading is required |
    | No pipe table under the heading | the file, the heading's line |
-   | No `Milestone` **or** no `Status` column | the file, the header line, the headers it did find |
+   | No table under the heading resolves both `Milestone` and `Status` | the file, the heading's line, and for **each** candidate table its header line and the headers it did find |
    | Zero data rows | the file, the header line |
-   | Row status not in the union after normalisation | the file, the offending line **and** value, and the legal values |
+   | Row status not in the union after normalisation | the file, the offending line **and** value, the legal values, and that the cell is the operator's to correct by hand — a row a human owns is `needs_operator` |
    | Owner cell neither `agent` nor `operator` (see §13, D3) | the file, the offending line **and** value, and `agent \| operator` |
 
 4. **Owner resolution.** No Owner column ⇒ every row `agent`. With the column: empty / `—` /
@@ -270,6 +274,11 @@ interpolate its spec without a cycle (§15).
    export function firstUnfinished(table: ExecutionTable): MilestoneRow | null;   // status !== "done"
    export function rowStatus(table: ExecutionTable, id: string): MilestoneStatus | null;
    export function operatorGates(table: ExecutionTable): MilestoneRow[];          // owner === "operator"
+   /** Operator rows positioned after the LAST agent row — steps with no milestone left to
+    *  unblock. They are post-execution work and must not be in this table at all (D11). */
+   export function trailingOperatorRows(table: ExecutionTable): MilestoneRow[];
+   /** Unfinished agent work: `status !== "done" && owner === "agent"` — the same "unfinished"
+    *  predicate as `firstUnfinished`, never `status === "pending"` (D9). Sizes M5's session cap. */
    export function pendingAgentRows(table: ExecutionTable): MilestoneRow[];
    export function doneCount(table: ExecutionTable): number;
    export function hasOwnerColumn(table: ExecutionTable): boolean;
@@ -301,6 +310,7 @@ interpolate its spec without a cycle (§15).
    | `unknown-status.md` | synthetic | Throw naming line + value (AC12) |
    | `legacy-blocked.md` | synthetic | `blocked` → `needs_operator` + `legacyBlocked` (AC11) |
    | `pending-in-summary-only.md` | synthetic | **E3** — front matter, prose, and a Milestone Summary table *above* the `## Execution Status` heading, **and a prose paragraph between that heading and its table** |
+   | `two-tables.md` | synthetic — written by hand from the *shape* of the consumer playbook that produced the reported case, never copied from it | **D8** — a section-numbered heading (`## 5. Execution Status`) with a checkpoint table (headers `CP` / `After` / `Status` / `Approved by the human`) **above** the milestone table. The checkpoint table is skipped; the milestone table is parsed |
 
    Copy the `## Execution Status` **section only**, not the whole playbook. Each fixture opens
    with an HTML comment naming its source path and the commit it was taken from.
@@ -328,7 +338,19 @@ interpolate its spec without a cycle (§15).
 - `setMilestoneStatus`: preserves the rest of the line byte-for-byte; preserves backtick wrapper
   and padding; absent row ⇒ content returned unchanged.
 - Derived queries: `firstUnfinished` skips `done` and returns the first of anything else;
-  `operatorGates`; `pendingAgentRows`; `doneCount`; `rowStatus` on a present and an absent row.
+  `operatorGates`; `doneCount`; `rowStatus` on a present and an absent row.
+- **`pendingAgentRows` returns every *unfinished* agent row** (D9): a table of `in_progress` and
+  `needs_operator` rows returns both, an all-`done` table returns none, and an operator-owned
+  unfinished row is excluded. Read as `status === "pending"` this under-sizes M5's session cap on
+  a resumed playbook and pauses a healthy run as `session_cap`, so the predicate is pinned here.
+- **`trailingOperatorRows`** (D11): with rows `M1 M2 G1 M3` it is empty (G1 unblocks M3); with
+  `M1 M2 G1 G2` it is `[G1, G2]`; with an all-agent table it is empty; with an operator row that is
+  already `done` after the last agent row it still returns that row — status is the caller's filter,
+  position is the question.
+- **A foreign table under the same heading is skipped, not an error** (`two-tables.md`, D8): the
+  parse returns the milestone rows and no checkpoint row appears in `rows`. With the milestone
+  table removed from that fixture, the parse **throws**, and the message names the candidate
+  table's header line and the headers it found.
 - **The example table inside `EXECUTION_TABLE_SPEC` round-trips through `parseExecutionStatus`.**
   (The other half of the contract test — that every union member appears in the rendered prompts —
   lands in M6 with the prompts it asserts on.)
@@ -658,6 +680,24 @@ agent prose structurally inert, so a session cannot resume its own task through 
    is a warning and never blocks advancement** — failing the sign-off tick would strand the task
    at a stage whose marker is already ticked.
 
+10. **A trailing operator row blocks the tick** (§13, D11). Before that announcement, if
+    `trailingOperatorRows(table)` is non-empty — an `Owner = operator` row with no agent milestone
+    after it — the advance does **not** happen. Same shape as the `need_decision` unticked-checklist
+    path (`advancement.ts:47-57`): `removeCompletionMarker`, `log.warn`, `advanced: false`, reason
+    `trailing_operator_rows`. The warning names each row and the fix:
+
+    > `G9 — Merge PR #2`, `G10 — Tag v0.1-backend` have no milestone after them. Merging this
+    > task's PR, tagging, releasing and deploying happen **after** the QA lap — they are not
+    > execution milestones and do not belong in the Execution Status table. Delete these rows
+    > (keep them in the plan's closing notes if you want them written down), then tick the box
+    > again.
+
+    This is the one blocking check at `need_execution`, and it is deliberate: the alternative is a
+    plan that cannot finish executing, which is where the whole class of bug in this task lives. A
+    gate that genuinely unblocks a later milestone has that milestone after it and is untouched.
+    A parse failure still only warns — this check is skipped, not failed, when the table cannot be
+    read.
+
 ### Test requirements
 
 **`tests/pipeline/states.test.ts`** (extend; update the existing map assertions to `?.file`)
@@ -687,6 +727,9 @@ agent prose structurally inert, so a session cannot resume its own task through 
   left alone (AC9).
 - `resumed_at` written on resume.
 - `need_execution` advance logs the gate list; a malformed table there warns and **still advances**.
+- **`need_execution` with a trailing operator row does not advance** (D11): marker unticked on
+  disk, both rows named in the warning, stage unchanged, reason `trailing_operator_rows`. With the
+  same table plus one agent row *after* the gate, the advance succeeds and the gate is announced.
 - **An unparseable table at resume returns `unparsable_table`, does not reject, and leaves the
   task at `need_operator`.**
 - **The generic path returns `advanced: false` for a stage with no next stage** — written so it
@@ -907,6 +950,7 @@ they cover, per the project's existing convention.
    ```
    next = firstUnfinished(table)
    if (!next)                            → complete
+   if (isTrailingOperatorRow(table, next)) → complete                      // D11 — legacy net
    if (next.status === "needs_operator") → pause(next, next.legacyBlocked ? "legacy_blocked"
                                                                          : "agent_declared")
    if (next.owner === "operator")        → pause(next, "planned_gate")     // zero sessions
@@ -915,6 +959,21 @@ they cover, per the project's existing convention.
                                          → pause(next, "stall")
                                          → run(next)
    ```
+
+   **The D11 branch is the legacy net, and it is second on purpose.** An unfinished operator row
+   with no agent milestone after it is a post-execution step — merge, tag, release, deploy — that
+   a hand-written or pre-D11 playbook left in the table. It must not gate the lap: execution stops
+   *before* the merge by finishing and handing the task to `ai_qa`, which is the order the merge
+   needs anyway (QA reviews `git diff main...HEAD`; merge first and there is nothing left to
+   review). New plans cannot contain such a row — M6's prompt forbids it and M3's sign-off refuses
+   the tick — so this branch only ever fires on a playbook written before that. It is `complete`,
+   not `pause`, because there is no agent work left and a pause would ask the operator to unblock
+   something the pipeline is not waiting for.
+
+   `isTrailingOperatorRow(table, row)` is `trailingOperatorRows(table).some(r => r.id === row.id)`
+   (M1). The `complete` branch then logs the rows rather than dropping them silently:
+   `Execution complete — 2 operator step(s) remain in the table and are yours after QA: G9 — Merge PR #2, G10 — Tag v0.1-backend`.
+   They also reach the QA prompt already, through `operatorGates` (M6 task 3).
 
 6. **`foldOutcome` — where AC4 lives**:
 
@@ -947,8 +1006,11 @@ they cover, per the project's existing convention.
    computed once at loop entry** from the initial parse. Computing it per iteration would let a
    growing table raise its own ceiling. Because a session that commits without finishing counts as
    a stall, a *healthy* run can legitimately take `threshold` sessions per milestone — so the cap
-   is sized from that worst case, not "pending + 2". **When it trips the task pauses; it is not an
-   error** (E14, AC5).
+   is sized from that worst case, not "pending + 2". **`pendingAgentRows` is *unfinished* agent
+   rows — `status !== "done" && owner === "agent"`, the same predicate as `firstUnfinished`
+   (D9)** — so a playbook resumed with `in_progress` or `needs_operator` rows cannot size its own
+   cap below the work it still has. `SESSION_CAP_SLACK` keeps the cap at 2 even when the count is
+   zero. **When it trips the task pauses; it is not an error** (E14, AC5).
 
 9. **The driver** — `export async function handleExecute(ctx: TaskContext): Promise<void>` (§6.3):
 
@@ -1038,6 +1100,18 @@ they cover, per the project's existing convention.
     errors here would send this task to `error` on the operator's next `drive` — AC12 working as
     designed, at the worst possible moment. Record the result in M5's Notes.
 
+    **Then the same read for every in-flight consumer playbook the operator names**, starting with
+    the one that produced the reported case: `bcb-time-tracker`
+    `plans/0001_backend-scaffold/04_execute.md` — a section-numbered heading, a hand-written
+    checkpoint table under it, no Owner column. That shape is what the rewritten loop meets first
+    in the real world; `plans/0002`–`0004` in this repo were all written by the same prompt and
+    never exercise a hand-edited one. For each playbook record, in M5's Notes, either the row set
+    or the exact `ExecutionTableError`. **A consumer playbook that errors is a finding for D8 —
+    a table the parser should have skipped, or a message that fails to name the file, the line and
+    the fix — never a reason to loosen the throw** (invariant I2). Read those files in place: copy
+    nothing out of them, since a consumer playbook can carry client names and the pre-commit secret
+    scan is not a substitute for not pasting.
+
 16. **`npm run build` — last item in this milestone's task list, and load-bearing.**
     `vibe-racer` on this machine is an `npm link`, so the build overwrites the exact bundle the
     running CLI was loaded from. Without it the cutover in M5's Notes cannot happen.
@@ -1051,6 +1125,7 @@ they cover, per the project's existing convention.
 | AC1 | Unchanged table → `run`, `run`, then `{ kind: "pause", cause: "stall" }` |
 | AC2 | Row `needs_operator` → `pause` / `agent_declared` after exactly 1 session |
 | AC3 | First unfinished row `owner: "operator"` → `pause` / `planned_gate` **before** any `run` |
+| D11 | Trailing operator rows (`M1 done`, `G9`, `G10`, no agent row after) → `complete`, not `pause`; `runAndStream` never called; the same table with an agent row after `G9` still pauses at `G9` |
 | AC4 | M1 `done` then M2 stalling → pause at **M2**, not M1 |
 | AC5 | `sessionsThisDrive >= sessionCap` → `pause` / `session_cap`, never a throw |
 | AC6 | `resumedAt === row.id` ⇒ `thresholdFor` returns 1; one stall pauses |
@@ -1092,11 +1167,21 @@ loop, so nothing instructs the agent to do something the pipeline cannot yet hon
 1. **`planReviewPrompt`** (§8.1):
    - Interpolate `EXECUTION_TABLE_SPEC` **verbatim** in the File-2 section, replacing the
      hand-written column list and status values.
-   - New rule with the categories stated explicitly: *any action vibe-racer must not or cannot
-     take is its own row with `Owner = operator`, never prose between rows* — push, open or merge
-     a PR, code review, deploy, release, run a workflow, manual visual or screenshot checks, soak
-     and wait periods, secrets, credentials, external dashboards and services, anything outside
-     the repository.
+   - New rule with the categories stated explicitly: *an action vibe-racer must not or cannot take
+     **that a later milestone in this plan depends on** is its own row with `Owner = operator`,
+     never prose between rows* — merging a **prerequisite** PR, code review, credentials, secrets,
+     an external service or dashboard, a manual visual or screenshot check, a soak or wait period,
+     anything outside the repository that a following milestone needs.
+   - **The counter-rule, stated as plainly (D11): what happens *after* the last milestone is not in
+     this file at all.** Merging this task's own PR, tagging, cutting a release, deploying,
+     publishing, announcing — none of them is a milestone, a gate row, a checklist item or a
+     "post-milestone steps" table. The execute lap ends at the last agent milestone and the task
+     goes to QA; the merge is the operator's, after QA and cleanup, and QA needs the branch
+     unmerged to have something to review. Spell out the consequence for the planner: **every gate
+     row must have at least one agent milestone after it** — a gate with nothing after it is a
+     post-execution step and belongs in the plan's closing notes, not the table. Say so twice in
+     the prompt, once in the table rules and once in the File-2 structure list, because this is the
+     shape a plan reaches for by itself.
    - Gate IDs are `G<n>`.
    - Each gate row gets a matching section in `03_plan.md` — heading `## G<n> — <name>`, a `- [ ]`
      checklist of concrete actions, and a `**Verification:**` line — **in the shape
@@ -1118,6 +1203,10 @@ loop, so nothing instructs the agent to do something the pipeline cannot yet hon
      append an Operator actions block in exactly the given format, and end the session.
    - **The explicit rule**: *"You never push, open PRs, merge PRs or deploy."* Today this lives
      only in whatever the plan happened to write.
+   - **Where the lap ends** (D11): *"Execution ends at the last agent milestone. Merging this
+     task's PR, tagging and deploying happen after the QA lap and are not yours. If the table
+     still carries such a row from an older plan, leave it exactly as it is — do not run it, do
+     not mark it, do not `needs_operator` it. The handler ends the lap."*
    - **Gate verification before a dependent milestone**, with the fallback ladder: run the
      read-only check from `03_plan.md` (`git fetch`, `git log`, `git merge-base`, `gh pr view`);
      if it cannot run, fall back to local refs; if that is inconclusive, **take the operator's tick
@@ -1162,6 +1251,12 @@ loop, so nothing instructs the agent to do something the pipeline cannot yet hon
 - Plan prompt mentions the Owner column, `G<n>`, the gate categories, the per-gate
   `**Verification:**` shape, and the "Operator gates" section; it no longer contains the word
   `blocked`.
+- **Plan prompt states the D11 counter-rule**: every gate row is followed by a milestone it
+  unblocks, and merge / tag / release / deploy of this task's own work are not rows. Assert on
+  both placements, and assert the prompt does **not** invite a "post-milestone" or "human steps"
+  table — the shape that produced the reported case.
+- Execute prompt says the lap ends at the last agent milestone and that merge and tag happen after
+  QA, so an agent meeting such a row in a legacy playbook does not try to "prepare" it.
 - Execute prompt mentions `needs_operator`, the no-push/no-PR/no-deploy rule and gate
   verification with its fallback ladder.
 - `qaPrompt(ctx, [])` omits the coverage requirement; `qaPrompt(ctx, ["G1 — …"])` includes it.
@@ -1201,6 +1296,12 @@ tasks — no hand-written plan folders.
      at plan time as `Owner = operator` rows; the detour lives outside `STAGE_ORDER` and returns
      to `ready_to_execute`; the agent signals through `04_execute.md` and the handler writes the
      stage.
+   - Add a key decision for **where the execute lap ends** (D11): the Execution Status table holds
+     only work that finishes before QA. Merge, tag, release and deploy of the task's own work are
+     never rows — QA reviews `git diff main...HEAD` and needs the branch unmerged. Every gate row
+     is followed by the milestone it unblocks; the plan prompt says so, `tryAdvance` refuses the
+     sign-off tick when it is not true, and the loop completes rather than pauses on a trailing
+     gate left by an older plan.
    - Update the **"Seven laps, seven documents"** entry: execution is one session per milestone
      against the Execution Status table, bounded by `MAX_STALLED_SESSIONS` and the per-`drive`
      session cap.
@@ -1216,9 +1317,11 @@ tasks — no hand-written plan folders.
 
 3. **`CHANGELOG.md`**: one `## [Unreleased]` entry — Added (`need_operator`, operator gates, the
    pause block, the parser), Changed (`handleExecute` rewritten; `STAGE_QUESTIONS_FILE` now
-   `(file, markerText)`; `blocked` removed from the status union and parsed as `needs_operator`),
-   Fixed (the infinite loop; an unparseable table no longer advances to `ai_qa`; a `blocked` row
-   no longer skips work). Note the `BASH_BLOCKLIST` count correction (S1) rather than rewriting
+   `(file, markerText)`; `blocked` removed from the status union and parsed as `needs_operator`;
+   the plan prompt no longer plans post-execution steps as rows, and sign-off refuses a plan that
+   does — D11), Fixed (the infinite loop; an unparseable table no longer advances to `ai_qa`; a
+   `blocked` row no longer skips work; a playbook whose only unfinished rows are the operator's
+   merge and tag completes into QA instead of spinning). Note the `BASH_BLOCKLIST` count correction (S1) rather than rewriting
    0.1.0's history.
 
    **This overrides `02_design.md` §14**, which assigned the entry to the cleanup lap. The cleanup
@@ -1229,7 +1332,25 @@ tasks — no hand-written plan folders.
    operator's business, and a mid-execution version bump would make M8's declaration describe a
    version that does not exist yet.
 
-4. **Create the three follow-up tasks** with `vibe-racer new "<title>"` — **without `--desc`**.
+4. **`docs/how-it-works.md` — "Upgrading a playbook that predates operator gates"**, a subsection
+   of the Execution Loop section rewritten in task 2. The rollout to a task already in flight is
+   not automatic, and the reported case is exactly such a task, so the plan says how:
+   - A consumer repo keeps the **old** loop until `vibe-racer` is rebuilt *and reinstalled there*.
+     M5's `npm run build` covers this machine's `npm link` and nothing else.
+   - A playbook with no Owner column still parses and still runs (M1's default). A human-owned
+     step inside it is invisible to the table, so it stalls, pauses after `MAX_STALLED_SESSIONS`,
+     and costs those sessions again on each `drive` until the row is fixed — bounded, never a
+     loop, but not free. The pause block emitted there already says what to add (AC13).
+   - The zero-session path needs the operator to add an `Owner` column and give the step its own
+     `Owner = operator` row. Hand edits to the table are safe at a pause by design (E11, E12, AC9),
+     and `setMilestoneStatus` no-ops on a row that is gone.
+   - Nothing is retroactive and no migration code ships (D10): rows already `done` stay `done`.
+   - **Merge, tag, release and deploy are not in the playbook** (D11). State the lifecycle once,
+     in order: execution ends at the last agent milestone → `ai_qa` reviews `git diff main...HEAD`
+     → cleanup → the operator merges and tags. A pre-D11 playbook that lists those as rows still
+     completes into QA (the loop's D11 branch), and the rows can be deleted at any time.
+
+5. **Create the three follow-up tasks** with `vibe-racer new "<title>"` — **without `--desc`**.
    `--desc` pre-ticks "Ready to advance to Objective Review" (`new.ts:20`), so the operator's next
    `drive` would advance all three and offer paid objective-review laps alongside #5's QA lap.
    Write each `00_objective.md` by hand from the text below and leave its checkbox **unticked** —
@@ -1244,7 +1365,7 @@ tasks — no hand-written plan folders.
       decide what happens with a dirty working tree and with two actionable tasks on different
       branches.
 
-5. **Delete `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md`** (AC20) — **the last act
+6. **Delete `plans/0005_infinite-loop-fix/execute_infinite_loop_bug.md`** (AC20) — **the last act
    of this milestone**, after confirming every design decision it carries is reflected in
    `02_design.md`, this plan, or the code.
 
@@ -1457,6 +1578,62 @@ fixed. The one operator-owned step this task has (the M5 cutover interrupt) is d
 Notes cell as a deliberate, skippable choice, and `04_execute.md`'s "Operator gates" section says
 so explicitly.
 
+**D8 — under the `Execution Status` heading the parser takes the first table that resolves both
+`Milestone` and `Status`, skipping any table that does not.** The design's §3.3 says "the first
+pipe table after the heading", which was written against playbooks this tool generates. The
+playbook that produced the reported case is hand-written and carries a checkpoint table
+(`CP` / `After` / `Status` / `Approved by the human`) alongside its milestone table, under a
+section-numbered heading. Under the literal design rule that file throws, and the task lands at
+`error` instead of `need_operator` — terminating, so the bug is still fixed, but the operator gets
+a parser complaint where they should get a pause block naming the gate. Skipping a non-qualifying
+table costs nothing and loosens no invariant: **I2 still holds**, because throwing is still the
+outcome when *no* table under the heading qualifies, and E3 still holds, because nothing above the
+heading is ever considered. Pinned by the `two-tables.md` fixture (M1) and by the consumer dry read
+(M5 task 15).
+
+**D9 — `pendingAgentRows` is `status !== "done" && owner === "agent"`, not `status === "pending"`.**
+The design names the helper and its use (sizing the session cap) but not its predicate, and the
+name reads like the narrow one. Narrow is wrong twice over: a playbook resumed with `in_progress`
+rows sizes its cap below the work it still has and pauses a healthy run as `session_cap`, and the
+helper would then disagree with `firstUnfinished`, which is the function that decides what runs.
+One definition of "unfinished" in this module, used by both.
+
+**D10 — rolling the fix onto a playbook already in flight is operator work, documented, not
+automated.** No migration code, no auto-inserted Owner column, no rewrite of an existing table.
+Backward compatibility is already covered by M1's `agent` default; what is missing is the operator
+knowing that an old playbook gets the stall path rather than the free one, and that a consumer repo
+needs the rebuilt CLI installed before any of this applies. That belongs in `how-it-works.md`
+(M7 task 4), and it keeps this task's own constraint — that it changes no consumer's files.
+
+**D11 — the Execution Status table holds only work that finishes before QA. Merge, tag, release
+and deploy of the task's own work are not rows, and every gate row is followed by the milestone it
+unblocks.** The second reported case is this one: a plan whose last two rows were
+`Merged to main — human` and `Tagged v0.1-backend — human`, both unfinished by construction,
+because the operator cannot merge before QA has reviewed the branch. Under the old regex those two
+cells read as "2 remaining" forever; under this task's loop, left unhandled, they would read as a
+planned gate and pause a task whose execution is actually finished. Both readings are wrong for
+the same reason: **they are not execution.** The lifecycle already owns them — execution → `ai_qa`
+(which reviews `git diff main...HEAD`, so the branch must still be unmerged) → cleanup → the
+operator merges and tags.
+
+Three enforcement points, in cost order, because a prompt rule alone drifts — that is how `blocked`
+became a live status in one file and dead code in another:
+
+1. **Prevention, free** — M6's plan prompt states the counter-rule twice and tells the planner that
+   a gate row with nothing after it is a post-execution step.
+2. **Detection, free** — M3's `tryAdvance` refuses the `need_execution` tick when
+   `trailingOperatorRows(table)` is non-empty, unticks the marker and names the rows. This is the
+   only blocking check at that stage; it is justified because the alternative is a plan that cannot
+   finish executing.
+3. **Tolerance, free** — M5's loop treats a trailing operator row as the end of the lap and
+   advances to `ai_qa`, logging the rows so they are not lost. Legacy playbooks (and the one that
+   produced this case) therefore finish rather than pause or spin.
+
+This narrows the objective's gate examples rather than contradicting them: the objective's own
+worked example, `G1 — Open + merge PRs 0,1,2,9,3` before `M9`, is a **prerequisite** merge of
+*other* work with a milestone after it, which stays exactly as specified. What D11 excludes is the
+terminal case the objective's list does not distinguish.
+
 ---
 
 ## 14. Traceability: AC → milestone
@@ -1474,9 +1651,10 @@ so explicitly.
 | 9 Hand edits respected | M1 (no-op mutator) + M3 (status-guarded settle) | `advancement.test.ts` |
 | 10 Re-pause wording | M2 (`isRepause`) + M5 (sets it) | `operator-block.test.ts` |
 | 11 Legacy `blocked` pauses | M1 (alias) + M5 (cause) | `execute-table.test.ts` |
-| 12 Unparseable table errors | M1 (`ExecutionTableError`) + M5 (throws in the driver) | message assertions |
-| 13 No-Owner playbook runs | M1 (default) + M5 (`extraNotes` line) | fixtures + M5's dry read |
-| 14 Gates listed at sign-off | M3 (`tryAdvance` log) + M6 (plan prompt section) | `advancement.test.ts`, `prompts.test.ts` |
+| 12 Unparseable table errors | M1 (`ExecutionTableError`) + M5 (throws in the driver) | message assertions, incl. no-qualifying-table (D8); consumer dry read, M5 task 15 |
+| 13 No-Owner playbook runs | M1 (default) + M5 (`extraNotes` line) + M7 (rollout section, D10) | fixtures incl. `two-tables.md` + M5's dry read over this repo's and the consumer's playbooks |
+| 14 Gates listed at sign-off | M3 (`tryAdvance` log + trailing-row refusal, D11) + M6 (plan prompt section and counter-rule) | `advancement.test.ts`, `prompts.test.ts` |
+| — Post-execution steps are not rows (D11) | M1 (`trailingOperatorRows`) + M3 (refusal) + M5 (`complete`, not `pause`) + M6 (prompts) + M7 (docs) | `execute-table.test.ts`, `advancement.test.ts`, `execute.test.ts`, `prompts.test.ts` |
 | 15 `pitwall`/`drive` visibility | M4 | CLI tests, incl. "no error/failed wording" |
 | 16 Block is self-sufficient | M2 (renderer defaults) | per-cause render tests |
 | 17 Stall kind + inert quote | M2 (render) + M5 (`repoChanged`) | round-trip + driver tests |
