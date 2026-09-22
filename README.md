@@ -135,15 +135,16 @@ skills:                                  # optional - per-lap skill overrides
 
 ## Security
 
-vibe-racer runs Claude sessions with autonomous permissions but enforces a multi-layered security system:
+vibe-racer runs Claude sessions with autonomous permissions but enforces a multi-layered security system on every session `drive` starts:
 
+- **`state.yml` is pipeline-owned** — agent writes to it are denied at every stage; only vibe-racer moves a task
 - **Path containment** — file operations restricted to the project directory and `/tmp`
 - **Sensitive path blocklist** — `~/.ssh`, `~/.aws`, etc. are always denied
-- **Bash filtering** — 19 dangerous commands blocked, with interpreter-aware network detection
+- **Bash filtering** — 18 dangerous commands blocked, with interpreter-aware network detection
 - **Pre-commit secret scanning** — blocks commits containing API keys, private keys, or credentials
 - **Audit log** — all guard denials logged to `.vibe-racer/audit.log`
 
-For sensitive workloads, run inside Docker with `--network none`. See [Security](docs/security.md) for the full assessment.
+Two things the guard does **not** do: it does not run inside `vibe-racer radio`, which is your own interactive `claude` CLI; and it does not block `git push` or `gh pr` — "vibe-racer never pushes" is a prompt rule until follow-up task #6 lands. For sensitive workloads, run inside Docker with `--network none`. See [Security](docs/security.md) for the full assessment.
 
 ## Documentation
 
