@@ -1,6 +1,8 @@
 import type { SlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import type { TaskContext } from "../pipeline/types.js";
 import type { Stage } from "../state/schema.js";
+import { EXECUTION_TABLE_SPEC } from "../pipeline/execute-table.js";
+import { PAUSE_BLOCK_SPEC } from "../pipeline/operator-block.js";
 
 export const PERSONAS = {
   productDesigner: [
@@ -400,7 +402,17 @@ A detailed implementation plan. Structure it with:
 - Dependency graph (which milestones depend on which)
 - Test strategy
 
-Each milestone must be self-contained and testable. Sequential execution — one milestone at a time, committed individually, running continuously without pausing between milestones.
+Each milestone must be self-contained and testable. Sequential execution — one milestone at a time, committed individually, running continuously between operator gates.
+
+### Operator gates in \`03_plan.md\`
+
+An action vibe-racer must not or cannot take, **that a later milestone in this plan depends on**, is an operator gate: merging a prerequisite PR, code review, credentials or secrets, an external service or dashboard, a manual visual or screenshot check, a soak or wait period, running a workflow, anything outside the repository that a following milestone needs. Each gate gets its own section in the plan, in the shape the pipeline reads:
+
+- the heading \`## G<n> — <name>\` — gates are numbered \`G1\`, \`G2\`, … independently of milestones
+- a \`- [ ]\` checklist of concrete actions for the operator, one per line at column 0
+- a \`**Verification:**\` line: the read-only check the next agent milestone runs to confirm the gate cleared (\`git merge-base --is-ancestor\`, \`gh pr view\`, …). Gates with nothing checkable carry \`**Verification:** None — operator's word\`
+
+What happens *after* the last milestone is not in this plan at all. Merging this task's own PR, tagging, cutting a release, deploying, publishing, announcing — none of them is a milestone, a gate or a checklist item. The execute lap ends at the last agent milestone and the task goes to QA; the merge is the operator's, after QA and cleanup, and QA needs the branch unmerged to have something to review. If you must mention such steps, do it in a closing note — never as rows.
 
 ### File 2: \`${ctx.planPath}/04_execute.md\`
 
@@ -408,11 +420,33 @@ An execution playbook. Structure it with:
 - Execution order
 - Step-by-step protocol (how to run each milestone)
 - Rules (one at a time, always commit, etc.)
-- Execution status table: | Milestone | Name | Status | Commit | Notes |
-  - All milestones start as \`pending\`
-  - Status values: \`pending\` | \`in_progress\` | \`done\` | \`blocked\`
+- The milestone status table, in exactly the shape specified below. Every milestone starts as \`pending\`. Every gate is its own row with \`Owner\` = \`operator\` — never prose between rows — and **every gate row is followed by the agent milestone it unblocks**. Merge, tag, release and deploy of this task's own work are not rows: they come after QA.
 - Milestone summary table
 - Stack/technology reference
+- An "Operator gates" section, **immediately above the \`# Complete\` checkbox** (see below)
+
+${EXECUTION_TABLE_SPEC}
+
+Table rules for this plan, in addition to the above:
+
+- A step vibe-racer must not or cannot take that a later milestone depends on (the categories listed under "Operator gates" above) is its own row with \`Owner\` = \`operator\` and ID \`G<n>\`, matching its \`## G<n> — <name>\` section in \`03_plan.md\`. Never write such a step as prose between rows or inside a Notes cell.
+- **Every gate row must have at least one agent milestone after it.** A gate with nothing after it is a post-execution step, not a gate: it belongs in the plan's closing notes, not in the table. Merging this task's PR, tagging, releasing and deploying are never rows — they happen after the QA lap.
+
+### The "Operator gates" section in \`04_execute.md\`
+
+Directly above the \`# Complete\` checkbox, write:
+
+\`\`\`
+## Operator gates in this plan
+
+Execution will pause at each of these and wait for you.
+
+- **G1** — <what the operator does> — before M<n>
+\`\`\`
+
+If the plan has no gates, the section is still written and reads exactly:
+\`None — execution runs start to finish without you.\`
+An explicit "none" is a promise the operator can hold the plan to.
 
 **IMPORTANT:** End the file with a completion checkbox section:
 
@@ -474,7 +508,17 @@ If information is missing, document it as assumptions in a \`## Assumptions & Ga
   return { prompt, persona };
 }
 
-export function executeMilestonePrompt(ctx: TaskContext): {
+export interface MilestoneRef {
+  /** The Execution Status row ID the loop chose — `M3`, `M5a`. */
+  id: string;
+  /** The row's Name cell; may be empty when the table has no Name column. */
+  name: string;
+}
+
+export function executeMilestonePrompt(
+  ctx: TaskContext,
+  milestone: MilestoneRef,
+): {
   prompt: string;
   persona: string;
 } {
@@ -483,30 +527,59 @@ export function executeMilestonePrompt(ctx: TaskContext): {
     : `Read the product spec: \`${ctx.planPath}/01_product.md\`
 Read the design spec: \`${ctx.planPath}/02_design.md\`
 `;
+  const label = milestone.name ? `${milestone.id} — ${milestone.name}` : milestone.id;
   const prompt = `
 You are executing a milestone for task #${ctx.taskNumber}: "${ctx.title}".
 ${contextFilesInstruction(ctx)}
 ## Your task
 
 1. Read the execution playbook: \`${ctx.planPath}/04_execute.md\`
-2. Find the FIRST \`pending\` milestone in the Execution Status table
+2. The milestone to execute is **${label}** — the milestone named in this prompt. The pipeline chose it from the Execution Status table; do not pick a different row
 3. Read the detailed milestone tasks from: \`${ctx.planPath}/03_plan.md\`
 4. Read any project context files listed above
 ${specInstructions}5. Implement ALL tasks for that ONE milestone
 
 ## Execution protocol
 
-1. Update the milestone status to \`in_progress\` in \`${ctx.planPath}/04_execute.md\`
-2. Implement each task in the milestone
-3. Verify the build passes: \`npm run build\` with no errors
-4. Run linter: \`npm run lint\` and fix any violations
-5. Run tests: \`npm run test\`
-6. Fix any failing tests or build errors
-7. Update the milestone status to \`done\` in \`${ctx.planPath}/04_execute.md\`
+1. If this milestone follows an operator gate, verify the gate cleared first — see "Gate verification" below
+2. Update the milestone status to \`in_progress\` in \`${ctx.planPath}/04_execute.md\`
+3. Implement each task in the milestone
+4. Verify the build passes: \`npm run build\` with no errors
+5. Run linter: \`npm run lint\` and fix any violations
+6. Run tests: \`npm run test\`
+7. Fix any failing tests or build errors
+8. Update the milestone status to \`done\` in \`${ctx.planPath}/04_execute.md\`
+
+${EXECUTION_TABLE_SPEC}
+
+## When you cannot finish: the \`needs_operator\` protocol
+
+If this milestone — or anything it depends on — needs an action you must not or cannot take, do **not** attempt it, do **not** work around it, and do **not** start a later milestone. Instead:
+
+1. Set this milestone's status to \`needs_operator\` in the Execution Status table
+2. Append an Operator actions block to the end of \`${ctx.planPath}/04_execute.md\`, in exactly the format below
+3. End the session with a final message that says what you need and why
+
+${PAUSE_BLOCK_SPEC}
+
+## What you never do
+
+- **You never push, open PRs, merge PRs or deploy.** Not for this task, not for a prerequisite, not to "help". Those are the operator's, and a milestone that needs one of them is a \`needs_operator\` stop.
+- **Execution ends at the last agent milestone.** Merging this task's PR, tagging and deploying happen after the QA lap and are not yours. If the table still carries such a row from an older plan, leave it exactly as it is — do not run it, do not mark it, do not \`needs_operator\` it. The handler ends the lap.
+
+## Gate verification
+
+Before a milestone that depends on an operator gate (a row with \`Owner\` = \`operator\` before it in the table), confirm the gate actually cleared:
+
+1. Run the read-only check from the gate's \`**Verification:**\` line in \`${ctx.planPath}/03_plan.md\` — \`git fetch\`, \`git log\`, \`git merge-base\`, \`gh pr view\` and the like. Read-only only.
+2. If the check cannot run (no network, no \`gh\`), fall back to local refs: \`git log\`, \`git branch --contains\`, \`git merge-base\` against what is already fetched.
+3. If that is inconclusive, **take the operator's tick as the answer** and say so in your session output. A gate the operator ticked is not a failed gate because you could not check it.
+
+Only a check that ran and showed the gate unmet is a reason to stop; then follow the \`needs_operator\` protocol and quote the check's output in the block.
 
 ## Rules
 
-- Execute ONLY the first pending milestone — do NOT touch any other milestones
+- Execute ONLY the milestone named above — do NOT touch any other milestones
 - Implement EXACTLY what the plan specifies — no more, no less
 - Do NOT refactor code outside the current milestone's scope
 - All code must build, pass lint, and pass tests before marking done
@@ -523,6 +596,7 @@ const CHAT_PERSONA_MAP: Record<string, string> = {
   need_design: PERSONAS.uxDataArchitect,
   need_plan: PERSONAS.softwareEngineer,
   need_execution: PERSONAS.softwareEngineer,
+  need_operator: PERSONAS.softwareEngineer,
   fine_tuning: PERSONAS.qaEngineer,
   need_decision: PERSONAS.releaseManager,
 };
@@ -538,6 +612,10 @@ const CHAT_ROLE_DESCRIPTIONS: Record<string, string> = {
     "Help the human think through architecture and planning answers. Explain technical trade-offs, suggest approaches, draft edits to the questions file.",
   need_execution:
     "Help the human review the implementation plan and execution playbook. Discuss milestone ordering, risks, and readiness.",
+  need_operator:
+    "The task is paused waiting on you. Read the last 'Operator actions' block in 04_execute.md. " +
+    "Explain what the gate needs and why, help reword or split the milestone, and help edit the " +
+    "Execution Status table if the step is not one vibe-racer can take.",
   fine_tuning:
     "I've reviewed the QA findings in 05_qa.md. I can help you understand the issues found, prioritize which findings to address, and guide fixes. I have full context of the plan directory.",
   need_decision:
@@ -557,6 +635,13 @@ export function chatPrompt(
       ? "You may make small coding changes (bug fixes, display tweaks, minor adjustments) but do not refactor large sections or add new features."
       : "You are helping the human think through their review — do not produce full pipeline artifacts (specs, plans, execution playbooks, etc.).";
 
+  // Nothing but this prompt enforces it: `radio` spawns the operator's own interactive `claude`
+  // CLI, where `canUseTool` and Rule 0 do not run. True of radio at every stage, not new here.
+  const pauseGuardrail =
+    stage === "need_operator"
+      ? "\n- Do not push, open PRs, merge or deploy, and do not tick the resume marker — that is the operator's."
+      : "";
+
   const systemPrompt = `${persona}
 
 You are helping a human review task #${ctx.taskNumber}: "${ctx.title}" at the [${stage}] stage.
@@ -566,7 +651,7 @@ ${roleDescription}
 
 ## Guardrails
 - ${guardrail1}
-- Do not tick completion checkboxes or modify \`state.yml\`.`;
+- Do not tick completion checkboxes or modify \`state.yml\`.${pauseGuardrail}`;
 
   const contextFilesList = ctx.contextFiles.map((f) => `\`${f}\``).join(", ");
 
@@ -655,10 +740,32 @@ Do NOT add a "# Complete" section or a "Ready to advance" checkbox — the pipel
   return { prompt, persona: PERSONAS.releaseManager };
 }
 
-export function qaPrompt(ctx: TaskContext): {
+/**
+ * `gates` is every operator-owned row the task's playbook carries, as `G<n> — <name>`. The QA
+ * lap reviews `git diff main...HEAD`, so anything the operator merged at a gate is invisible to
+ * it; when there were gates the report has to say so before it says anything else.
+ */
+export function qaPrompt(ctx: TaskContext, gates: string[]): {
   prompt: string;
   persona: string;
 } {
+  const gatesSection = gates.length === 0
+    ? ""
+    : `
+## Operator gates this task paused at
+
+Execution paused at ${gates.length} operator gate(s) and resumed after the operator's work:
+${gates.map((g) => `- ${g}`).join("\n")}
+
+Work the operator did at a gate — merging other PRs, changing infrastructure, rotating
+credentials — may already be in \`main\`, and \`git diff main...HEAD\` does not show it. Your
+report MUST open with its coverage, before any section, in this shape:
+
+> This task paused at G1 (PRs merged into main). Work merged before that gate is outside
+> \`git diff main...HEAD\` and was not reviewed here.
+
+Name every gate listed above. Do not skip this even if you believe the gate changed nothing.
+`;
   const prompt = `
 You are a Senior QA Engineer reviewing task #${ctx.taskNumber}: "${ctx.title}".
 
@@ -677,7 +784,7 @@ If that diff is empty or the command fails (no main branch, shallow clone, detac
 HEAD), do NOT stop and do NOT report the work as clean. Fall back to reviewing every
 file named in 03_plan.md's milestone tasks, and say in "Verification run" which scope
 you used and why.
-
+${gatesSection}
 ## Where you sit in the pipeline
 You run immediately after the last execution milestone and BEFORE the cleanup lap.
 Cleanup has not happened yet. Cleanup is the lap that updates project documentation —

@@ -50,8 +50,12 @@ vi.mock("../../../src/claude/session.js", () => ({
   runAndStream: (...args: unknown[]) => mockRunAndStream(...args),
 }));
 
+const mockExecuteMilestonePrompt = vi
+  .fn()
+  .mockReturnValue({ prompt: "exec prompt", persona: "exec persona" });
+
 vi.mock("../../../src/claude/prompts.js", () => ({
-  executeMilestonePrompt: () => ({ prompt: "exec prompt", persona: "exec persona" }),
+  executeMilestonePrompt: (...args: unknown[]) => mockExecuteMilestonePrompt(...args),
 }));
 
 vi.mock("../../../src/git/operations.js", () => ({
@@ -422,6 +426,29 @@ describe("decideNextStep / foldOutcome", () => {
 // --- The driver -------------------------------------------------------------------------------
 
 describe("handleExecute — the driver", () => {
+  it("hands the row it chose to the prompt, so the agent and the loop never disagree", async () => {
+    files.set(
+      PLAYBOOK_PATH,
+      playbook([
+        "| M1 | Parser | `done` | abc123 | |",
+        "| M2 | Wire the parser | `pending` | | |",
+      ]),
+    );
+    mockRunAndStream.mockImplementation(async () => {
+      files.set(PLAYBOOK_PATH, files.get(PLAYBOOK_PATH)!.replace("`pending`", "`done`"));
+      return "";
+    });
+
+    const { handleExecute } = await loadHandler();
+    await handleExecute(CTX);
+
+    expect(mockExecuteMilestonePrompt).toHaveBeenCalledTimes(1);
+    expect(mockExecuteMilestonePrompt).toHaveBeenCalledWith(CTX, {
+      id: "M2",
+      name: "Wire the parser",
+    });
+  });
+
   it("advances to ai_qa when every row is done, and never to fine_tuning", async () => {
     files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `done` | abc123 | |"]));
 

@@ -479,7 +479,7 @@ export async function handleExecute(ctx: TaskContext): Promise<void> {
     const doneCountBefore = doneCount(loop.table);
     const before = await repoSnapshot(git, ctx.planPath);
 
-    const { prompt, persona } = executeMilestonePrompt(ctx);
+    const { prompt, persona } = executeMilestonePrompt(ctx, { id: row.id, name: row.name });
     const finalMessage = await runAndStream({
       prompt,
       persona,
