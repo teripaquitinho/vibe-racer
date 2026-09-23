@@ -116,6 +116,7 @@ Small tasks can be flagged as trivial during objective review, skipping product 
 - **Pit stops**: The human signals readiness by ticking `- [x] Ready to advance to ...` at the bottom of each document
 - **Radio calls**: If the race engineer needs more info, it appends follow-up questions and unchecks the checkbox
 - **Git-native**: Branches are created per task, commits happen after each lap. No push — you control merging
+- **Operator pauses**: When a milestone needs something the race engineer must not do — merge a PR, deploy, check something by eye — execution pauses and writes the checklist into `04_execute.md` instead of retrying. Tick it, run `drive`, and the lap picks up where it stopped
 - **Pre-filled answers**: The race engineer recommends answers to every question. You review and edit only disagreements
 
 ## Configuration
