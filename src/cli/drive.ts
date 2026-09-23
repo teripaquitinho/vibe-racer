@@ -115,6 +115,16 @@ export async function driveCommand(opts: {
         if (task.stage === "done") {
           await finalizeTask(task.number, task.title, cwd);
         }
+      } else if (task.stage === "need_operator" && result.reason === "no_questions_file") {
+        // The other non-advancing reasons already speak for themselves: `incomplete_checklist`
+        // and `unparsable_table` log from `tryAdvance`, and `no_marker` is simply a pause the
+        // operator has not finished yet, which `ineligibleMessage` below already names. This one
+        // would otherwise pass in complete silence.
+        log.warn(
+          `Task #${task.number} is paused at [need_operator] but ` +
+            `${STAGE_QUESTIONS_FILE.need_operator?.file} is missing from its plan folder — ` +
+            "nothing can resume it until that file is restored.",
+        );
       }
     }
   }

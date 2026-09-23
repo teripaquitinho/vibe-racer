@@ -286,6 +286,35 @@ describe("driveCommand", () => {
       expect(dimCalls).not.toContain("Ready to advance to");
     });
 
+    // `no_marker` is the everyday state of a pause in progress and stays quiet — `tryAdvance`
+    // already speaks for the checklist and the unparsable table. A missing playbook is the one
+    // reason nothing anywhere would have mentioned.
+    it("warns when a paused task has lost the file that would resume it", async () => {
+      const { tryAdvance } = await import("../../src/state/advancement.js");
+      vi.mocked(tryAdvance).mockResolvedValue({ advanced: false, reason: "no_questions_file" });
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([paused]);
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await driveCommand({});
+
+      const logger = await import("../../src/utils/logger.js");
+      const warnings = vi.mocked(logger.log.warn).mock.calls.flat().join(" ");
+      expect(warnings).toContain("Task #5");
+      expect(warnings).toContain("04_execute.md is missing");
+    });
+
+    it("says nothing extra while a pause is simply unfinished", async () => {
+      await stall();
+
+      const { driveCommand } = await import("../../src/cli/drive.js");
+      await driveCommand({});
+
+      const logger = await import("../../src/utils/logger.js");
+      const warnings = vi.mocked(logger.log.warn).mock.calls.flat().join(" ");
+      expect(warnings).not.toContain("04_execute.md is missing");
+    });
+
     it("lists a paused task under the operator group, not the human one", async () => {
       await stall();
 

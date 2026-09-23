@@ -539,6 +539,44 @@ describe("handleExecute — the driver", () => {
     expect(block).not.toContain("committed work but did not finish this milestone");
   });
 
+  // The AC17 tests above stub `repoSnapshot` with hand-picked heads, so they cannot see WHEN the
+  // snapshots are taken. These two can: `commitAll` runs `git add .`, so a snapshot taken after it
+  // reports the pipeline's own commit as the agent's work.
+  it("takes the after-snapshot before its own commit", async () => {
+    files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `pending` | | |"]));
+    const snapshotsAtCommit: number[] = [];
+    mockCommitAll.mockImplementation(async () => {
+      snapshotsAtCommit.push(mockRepoSnapshot.mock.calls.length);
+      return "exec123";
+    });
+
+    const { handleExecute } = await loadHandler();
+    await handleExecute(CTX);
+
+    // Both snapshots of the first session are already taken when its commit runs.
+    expect(snapshotsAtCommit[0]).toBe(2);
+  });
+
+  it("an agent that edited only the playbook gets the human-step sentence, not 'oversized'", async () => {
+    files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `pending` | | |"]));
+    // The agent writes its Notes cell — which the playbook protocol tells it to do — and nothing
+    // else. Only the pipeline's own commit moves HEAD.
+    let head = "head0";
+    let commits = 0;
+    mockRepoSnapshot.mockImplementation(async () => ({ head, dirtyFiles: [] }));
+    mockCommitAll.mockImplementation(async () => {
+      head = `head${++commits}`;
+      return `commit${commits}`;
+    });
+
+    const { handleExecute } = await loadHandler();
+    await handleExecute(CTX);
+
+    const block = lastBlock(files.get(PLAYBOOK_PATH)!);
+    expect(block).toContain("made no changes to the repository");
+    expect(block).not.toContain("committed work but did not finish this milestone");
+  });
+
   it("AC13 — a playbook with no Owner column gets the legacy note on a stall", async () => {
     files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `pending` | | |"]));
 

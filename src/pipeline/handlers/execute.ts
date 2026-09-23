@@ -49,6 +49,7 @@ import {
   nextPauseNumber,
   normalisePauseBlock,
   readPauseBlockState,
+  readPauseBlockWhy,
   renderPauseBlock,
   type PauseBlockInput,
   type PauseCause,
@@ -211,18 +212,14 @@ const LEGACY_PLAYBOOK_NOTE =
   "This playbook predates operator gates; add a gate row to the Execution Status table if this " +
   "step is yours.";
 
-/** The `**Why paused:**` line of a block the agent wrote, so `state.yml` quotes the agent. */
-const WHY_LINE = /^\*\*Why paused:\*\*\s*(.+)$/m;
-
-function blockText(content: string, startLine: number, endLine: number): string {
-  return content.split("\n").slice(startLine, endLine + 1).join("\n");
-}
-
+/**
+ * The `**Why paused:**` line of a block the agent wrote, so `state.yml` quotes the agent. The
+ * label's spelling lives in `operator-block.ts` and only there — it is the module that knows the
+ * block's shape, and a second copy here meant a label change had two homes.
+ */
 function agentWhy(content: string, rowId: string): string | null {
-  const location = findLastPauseBlock(content);
-  if (!location || !sameId(location.rowId, rowId)) return null;
-  const match = WHY_LINE.exec(blockText(content, location.startLine, location.endLine));
-  return match ? match[1].trim() : null;
+  const found = readPauseBlockWhy(content);
+  return found && sameId(found.rowId, rowId) ? found.why : null;
 }
 
 interface PauseParts {
@@ -307,7 +304,14 @@ function repoChanged(before: RepoSnapshot, after: RepoSnapshot): boolean {
   return before.dirtyFiles.some((file, i) => file !== after.dirtyFiles[i]);
 }
 
-/** Post-execution rows the loop deliberately walked past — logged, never dropped silently. */
+/**
+ * Post-execution rows the loop deliberately walked past — logged, never dropped silently.
+ *
+ * Filtered on `done`, unlike the sign-off check in `state/advancement.ts`, and the difference is
+ * deliberate: this runs AFTER execution, where a `done` cell was written by the pipeline or by an
+ * operator who did the work, so announcing those would be noise on every completed run. Before
+ * execution the same cell is only the plan author's claim, which is why sign-off ignores status.
+ */
 function announceTrailingRows(table: ExecutionTable): void {
   const rows = trailingOperatorRows(table).filter((row) => row.status !== "done");
   if (rows.length === 0) return;
@@ -489,8 +493,12 @@ export async function handleExecute(ctx: TaskContext): Promise<void> {
       taskPlanPath: ctx.planPath,
     });
 
-    const hash = await commitAll(git, `vibe-racer: ${row.id} for #${ctx.taskNumber}`, ctx.cwd);
+    // BEFORE the commit, deliberately. `commitAll` runs `git add .`, so a snapshot taken after it
+    // is always clean and its HEAD has moved for ANY edit the agent made — including the Notes
+    // cell the playbook protocol tells it to write. Taken here, `dirtyFiles` still holds the
+    // agent's uncommitted work and `repoSnapshot`'s plan-dir exclusion can actually bite.
     const after = await repoSnapshot(git, ctx.planPath);
+    const hash = await commitAll(git, `vibe-racer: ${row.id} for #${ctx.taskNumber}`, ctx.cwd);
     const nextTable = await readTable();
     const statusAfter = rowStatus(nextTable, row.id);
 

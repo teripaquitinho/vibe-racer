@@ -169,6 +169,13 @@ prompt. There are three bounds and one planned stop.
    agent rows when the lap started. If it trips, the task **pauses** with a safety-limit note; it
    does not error.
 
+**After a session-backstop pause, the row gets one session, not two.** Resuming spends a "resume
+budget" that buys the row a single session before the next pause, because for the other three
+stops the operator has looked at the pause and said *go on*. The backstop is the pipeline
+interrupting itself, so a genuinely oversized milestone can pause once per `drive` until it
+happens to finish in one session. That is bounded, never a loop — but the remedy is to split the
+milestone, not to keep running `drive`.
+
 A fifth case is not a stop but an end: an unfinished operator row with **no agent milestone after
 it** (a merge or tag row from a playbook written before operator gates) is treated as the end of
 the lap. The loop logs the rows, leaves them alone, and completes into `ai_qa`.

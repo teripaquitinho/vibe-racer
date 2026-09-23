@@ -18,9 +18,6 @@ export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 export const OWNERS = ["agent", "operator"] as const;
 export type Owner = (typeof OWNERS)[number];
 
-/** Describes gates in the prompt and labels them in logs. NEVER used to classify a row. */
-export const GATE_ID_PATTERN = /^G\d+$/;
-
 export const EXECUTION_STATUS_HEADING = "Execution Status";
 export const EXECUTION_PLAYBOOK_FILE = "04_execute.md";
 
@@ -474,9 +471,12 @@ Rules:
   branch before it is merged, so those steps come after the pipeline is done.
 - \`needs_operator\` marks a row the agent cannot finish on its own.
 
-Worked example:
+Worked example. It is shown WITHOUT its heading on purpose: \`${EXECUTION_PLAYBOOK_FILE}\` carries
+exactly one \`${EXECUTION_STATUS_HEADING}\` heading and it is the real one. Never copy this
+contract into the playbook — a second copy of the heading is a table the loop can execute instead
+of yours.
 
-## ${EXECUTION_STATUS_HEADING}
+Under your \`${EXECUTION_STATUS_HEADING}\` heading:
 
 | Milestone | Name | Owner | Status | Commit | Notes |
 |---|---|---|---|---|---|

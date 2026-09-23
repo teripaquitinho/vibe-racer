@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The plan prompt no longer plans post-execution steps as rows: merge, tag, release and deploy of the task's own work come after QA. The `need_execution` sign-off refuses the tick when the table ends in an operator row with nothing after it, names the rows and unticks the box; the execute prompt tells the agent to leave such a row alone; and the loop completes into `ai_qa` on one instead of pausing
 - The execute prompt carries the `needs_operator` protocol, the explicit no-push / no-PR / no-merge / no-deploy rule, and gate verification with a fallback ladder (read-only check → local refs → the operator's tick, said aloud)
 - `executeMilestonePrompt` takes the milestone row to execute; `qaPrompt` takes the list of gates
+- `EXECUTION_TABLE_SPEC`'s worked example ships without its `## Execution Status` heading. The parser reads the first such heading in the file, so an agent that quoted the contract into its playbook handed the loop a table to execute instead of the real one — and the status writer then edited the quoted copy
 - Correction to the 0.1.0 entry below, left as written: the Bash blocklist has **18** entries, not 19. `BASH_BLOCKLIST` and the list in `docs/security.md` have always agreed with each other; only the count was wrong
 
 ### Fixed
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - A `blocked` row no longer skips work — it pauses
 - A playbook whose only unfinished rows are the operator's own merge and tag now completes into QA instead of spinning on them
 - A `pending` cell in the milestone summary table or in prose no longer keeps the loop alive; only the table under "Execution Status" is read
+- The pause block no longer blames an oversized milestone for an undeclared human step. The post-session repository snapshot was taken after the pipeline's own `commitAll`, which runs `git add .`, so any edit the agent made — including the Notes cell the playbook asks it to write — read as "the agent committed work but did not finish"
+- A gate settled on resume no longer leaves `resumed_at` in `state.yml`. The gate never runs, so the unspent one-session budget sat there until some later row was renumbered into it
+- A ticked resume marker that `drive` cannot act on now says why. An unterminated code fence anywhere above the pause block hides it from the fence-aware reader, and resume failed in complete silence; a paused task whose playbook has gone missing is named too
 
 ## [0.3.0] - 2026-09-13
 

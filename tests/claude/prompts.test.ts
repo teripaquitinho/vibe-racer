@@ -303,6 +303,19 @@ describe("planReviewPrompt", () => {
     expect(prompt).toContain("| G1 | Operator merges PRs #12 and #14 |");
   });
 
+  // A heading the agent can quote into `04_execute.md` outranks the real table there and takes
+  // the loop with it — `parseExecutionStatus` takes the FIRST match in the file.
+  it("carries no Execution Status heading the agent could copy into its playbook", () => {
+    const headingLine = /^#{1,6}\s+.*Execution Status/;
+    for (const [name, { prompt }] of [
+      ["planReviewPrompt", planReviewPrompt(CTX)],
+      ["executeMilestonePrompt", executeMilestonePrompt(CTX, MILESTONE)],
+    ] as const) {
+      const headings = prompt.split("\n").filter((line) => headingLine.test(line));
+      expect(headings, name).toEqual([]);
+    }
+  });
+
   it("uses softwareEngineer persona", () => {
     const { persona } = planReviewPrompt(CTX);
     expect(persona).toBe(PERSONAS.softwareEngineer);

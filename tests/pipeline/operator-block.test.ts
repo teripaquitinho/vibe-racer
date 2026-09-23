@@ -6,6 +6,7 @@ import {
   renderPauseBlock,
   findLastPauseBlock,
   readPauseBlockState,
+  readPauseBlockWhy,
   untickResumeMarker,
   normalisePauseBlock,
   nextPauseNumber,
@@ -248,6 +249,32 @@ describe("untickResumeMarker", () => {
 
   it("is a no-op on a file with no pause block", () => {
     expect(untickResumeMarker(SIGNED_OFF_PLAYBOOK)).toBe(SIGNED_OFF_PLAYBOOK);
+  });
+});
+
+describe("readPauseBlockWhy", () => {
+  it("reads the last block's why line and the row it paused on", () => {
+    const content =
+      SIGNED_OFF_PLAYBOOK +
+      renderPauseBlock(input({ pauseNumber: 1, rowId: "G1" })) +
+      renderPauseBlock(input({ pauseNumber: 2, rowId: "M4", why: "the second one" }));
+
+    expect(readPauseBlockWhy(content)).toEqual({ rowId: "M4", why: "the second one" });
+  });
+
+  // The whole reason this reader lives here and not in the handler: it is fence-aware, so an
+  // agent that pastes a why line into its own message cannot put words in the block's mouth.
+  it("ignores the label inside the agent's quoted message", () => {
+    const content = SIGNED_OFF_PLAYBOOK + renderPauseBlock(input({
+      why: "the real reason",
+      agentMessage: "**Why paused:** a reason I made up",
+    }));
+
+    expect(readPauseBlockWhy(content)?.why).toBe("the real reason");
+  });
+
+  it("is null on a file with no pause block", () => {
+    expect(readPauseBlockWhy(SIGNED_OFF_PLAYBOOK)).toBeNull();
   });
 });
 

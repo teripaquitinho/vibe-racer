@@ -15,7 +15,6 @@ import {
   ExecutionTableError,
   MILESTONE_STATUSES,
   OWNERS,
-  GATE_ID_PATTERN,
   EXECUTION_TABLE_SPEC,
   EXECUTION_STATUS_HEADING,
   EXECUTION_PLAYBOOK_FILE,
@@ -51,10 +50,7 @@ describe("the contract", () => {
     expect(EXECUTION_PLAYBOOK_FILE).toBe("04_execute.md");
   });
 
-  it("GATE_ID_PATTERN describes gate IDs but never classifies a row", () => {
-    expect(GATE_ID_PATTERN.test("G1")).toBe(true);
-    expect(GATE_ID_PATTERN.test("M5a")).toBe(false);
-
+  it("a row is a gate by Owner, never by how its ID is spelled", () => {
     // An operator row whose ID is not gate-shaped is still a gate.
     const parsed = parseExecutionStatus(
       table(
@@ -485,8 +481,12 @@ describe("EXECUTION_TABLE_SPEC — the drift guard", () => {
     expect(EXECUTION_TABLE_SPEC).toMatch(/Merge, tag, release and deploy/);
   });
 
-  it("its worked example round-trips through parseExecutionStatus", () => {
-    const parsed = parseExecutionStatus(EXECUTION_TABLE_SPEC);
+  it("its worked example obeys the contract it teaches", () => {
+    // The spec deliberately ships the example WITHOUT a heading (an agent that quotes the
+    // contract into its playbook must not hand the loop a second table), so the heading the
+    // parser needs is supplied here instead of shipped to every agent.
+    const example = EXECUTION_TABLE_SPEC.slice(EXECUTION_TABLE_SPEC.indexOf("| Milestone | Name |"));
+    const parsed = parseExecutionStatus(`## ${EXECUTION_STATUS_HEADING}\n\n${example}`);
     expect(parsed.rows.map((r) => r.id)).toEqual(["M1", "G1", "M2"]);
     expect(parsed.rows.map((r) => r.status)).toEqual(["done", "pending", "pending"]);
     expect(parsed.rows.map((r) => r.owner)).toEqual(["agent", "operator", "agent"]);
@@ -494,5 +494,19 @@ describe("EXECUTION_TABLE_SPEC — the drift guard", () => {
     expect(operatorGates(parsed).map((r) => r.id)).toEqual(["G1"]);
     expect(trailingOperatorRows(parsed)).toEqual([]);
     expect(firstUnfinished(parsed)!.id).toBe("G1");
+  });
+
+  // The spec ships inside both prompts, so a heading line here is a heading line the agent can
+  // quote into its playbook — where it outranks the real table and takes the loop with it.
+  it("ships no Execution Status heading of its own", () => {
+    const headings = EXECUTION_TABLE_SPEC.split("\n").filter((line) =>
+      new RegExp(`^#{1,6}\\s+.*${EXECUTION_STATUS_HEADING}`).test(line),
+    );
+    expect(headings).toEqual([]);
+  });
+
+  it("still shows the example rows, heading or no heading", () => {
+    expect(EXECUTION_TABLE_SPEC).toContain("| G1 | Operator merges PRs #12 and #14 |");
+    expect(EXECUTION_TABLE_SPEC).toContain(`Under your \`${EXECUTION_STATUS_HEADING}\` heading:`);
   });
 });

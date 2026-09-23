@@ -300,6 +300,21 @@ export function readPauseBlockState(content: string): PauseBlockState | null {
   return { markerTicked, unchecked };
 }
 
+/**
+ * The `**Why paused:**` value of the LAST block, with the row it paused on. The handler quotes it
+ * into `state.yml` when the agent authored the block itself; it lives here because this module is
+ * the only one that is supposed to know how the block is spelled.
+ */
+export function readPauseBlockWhy(content: string): { rowId: string; why: string } | null {
+  const location = findLastPauseBlock(content);
+  if (!location) return null;
+
+  const lines = content.split("\n");
+  const scanned = scanLines(lines.slice(location.startLine, location.endLine + 1));
+  const why = labelledValue(scanned, WHY_LABEL);
+  return why === null ? null : { rowId: location.rowId, why };
+}
+
 /** Unticks the resume marker in the last block, leaving item checkboxes exactly as they were. */
 export function untickResumeMarker(content: string): string {
   const location = findLastPauseBlock(content);

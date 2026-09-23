@@ -1,7 +1,7 @@
 import path from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import type { Stage } from "./schema.js";
-import { resumeFromOperator, updateStage } from "./store.js";
+import { clearResumedAt, resumeFromOperator, updateStage } from "./store.js";
 import { STAGE_QUESTIONS_FILE, nextStage } from "../pipeline/states.js";
 import {
   hasCompletionMarker,
@@ -20,6 +20,7 @@ import {
   type ExecutionTable,
 } from "../pipeline/execute-table.js";
 import {
+  OPERATOR_RESUME_MARKER,
   findLastPauseBlock,
   readPauseBlockState,
   untickResumeMarker,
@@ -122,6 +123,12 @@ function signOffPlaybook(filePath: string): boolean {
     return true;
   }
 
+  // Status-blind on purpose, and NOT the filter `announceTrailingRows` uses in the loop
+  // (`pipeline/handlers/execute.ts`). This runs BEFORE execution, where a `done` cell is the plan
+  // author claiming something rather than the pipeline observing it — honouring it would make
+  // "mark the row done" the way around a gate whose whole job is keeping post-execution work out
+  // of the table. Deleting the row stays the only way through. After execution the same cell IS
+  // an observation, which is why the loop filters on it.
   const trailing = trailingOperatorRows(table);
   if (trailing.length > 0) {
     removeCompletionMarker(filePath);
@@ -186,7 +193,22 @@ export async function resumeFromOperatorPause(
   // or the ticked "Ready to advance to Execution" the sign-off left in this same file — inert,
   // by construction rather than by a regex that happens to match the right thing.
   const location = findLastPauseBlock(content);
-  if (!location) return { advanced: false, reason: "no_marker" };
+  if (!location) {
+    // The marker text is in the file but no block was found around it. The scanner is fence-aware
+    // and the parser is not, so an unterminated fence ANYWHERE above the block hides it — and
+    // without this line the operator ticks the box, `drive` says nothing at all, and the task is
+    // listed again with the instruction they just followed.
+    if (content.includes(OPERATOR_RESUME_MARKER)) {
+      log.warn(
+        `Found "${OPERATOR_RESUME_MARKER}" in ${questions.file}, but no pause block around it.`,
+      );
+      log.warn(
+        "An unterminated code fence above the block hides it from the reader. Close the stray " +
+          "``` fence, then run `vibe-racer drive` again.",
+      );
+    }
+    return { advanced: false, reason: "no_marker" };
+  }
 
   const state = readPauseBlockState(content);
   if (!state?.markerTicked) return { advanced: false, reason: "no_marker" };
@@ -202,9 +224,11 @@ export async function resumeFromOperatorPause(
     return { advanced: false, reason: "incomplete_checklist" };
   }
 
+  let settledGate = false;
   try {
     const settled = settleRow(content, location.rowId);
-    if (settled !== content) writeFileSync(filePath, settled, "utf-8");
+    settledGate = settled.wasGate;
+    if (settled.content !== content) writeFileSync(filePath, settled.content, "utf-8");
   } catch (e) {
     log.error(
       `Could not read the Execution Status table in ${questions.file}: ${describeTableError(e)}`,
@@ -213,7 +237,12 @@ export async function resumeFromOperatorPause(
     return { advanced: false, reason: "unparsable_table" };
   }
 
-  const { pausedStage } = resumeFromOperator(path.join(cwd, planPath));
+  const absPlanPath = path.join(cwd, planPath);
+  const { pausedStage } = resumeFromOperator(absPlanPath);
+  // `resumed_at` buys the resumed row ONE session before the next pause (`thresholdFor`). A gate
+  // row is settled here and never runs, so the budget would sit in `state.yml` unspent — and land
+  // on whatever agent row an operator later renumbers to that ID. The loop spends its own.
+  if (settledGate) clearResumedAt(absPlanPath);
   log.success(`Resuming ${location.rowId} at [${pausedStage}]`);
   return { advanced: true, reason: "resumed" };
 }
@@ -223,17 +252,19 @@ export async function resumeFromOperatorPause(
  * `done`, to a new ID, or deleting the row outright — must survive resume untouched, so only the
  * two statuses the pipeline itself wrote are rewritten.
  */
-function settleRow(content: string, rowId: string): string {
+function settleRow(content: string, rowId: string): { content: string; wasGate: boolean } {
   const table = parseExecutionStatus(content, EXECUTION_PLAYBOOK_FILE);
   const row = table.rows.find((candidate) => candidate.id.toLowerCase() === rowId.toLowerCase());
-  if (!row) return content;
+  if (!row) return { content, wasGate: false };
 
   const status = rowStatus(table, rowId);
   if (row.owner === "operator" && (status === "pending" || status === "needs_operator")) {
-    return setMilestoneStatus(content, rowId, "done");
+    return { content: setMilestoneStatus(content, rowId, "done"), wasGate: true };
   }
   if (row.owner === "agent" && status === "needs_operator") {
-    return setMilestoneStatus(content, rowId, "pending");
+    return { content: setMilestoneStatus(content, rowId, "pending"), wasGate: false };
   }
-  return content;
+  // A row the operator hand-edited — to `done`, to a new ID, or deleted outright. Untouched here,
+  // and it keeps its resume budget: an agent row settled by hand still has a session to run.
+  return { content, wasGate: false };
 }

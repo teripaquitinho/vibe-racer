@@ -315,7 +315,7 @@ describe("tryAdvance at need_operator", () => {
     expect(rows.map((r) => `${r.id}:${r.status}`)).toEqual(["M1:done", "M2:pending"]);
   });
 
-  it("writes resumed_at and clears the pause fields", async () => {
+  it("clears the pause fields, and spends no resume budget on a gate", async () => {
     pauseState("G1");
     writePlaybook(
       table(["| G1 | Merge the PRs | `operator` | `pending` | — | — |", "| M2 | Wire it up | `agent` | `pending` | — | — |"]) +
@@ -326,10 +326,61 @@ describe("tryAdvance at need_operator", () => {
 
     const state = readState(planDir);
     expect(state.stage).toBe("ready_to_execute");
-    expect(state.resumed_at).toBe("G1");
     expect(state.operator_reason).toBeUndefined();
     expect(state.operator_milestone).toBeUndefined();
     expect(state.paused_stage).toBeUndefined();
+    // `resumed_at` buys ONE session before the next pause. The gate is settled to `done` here and
+    // never runs, so an unspent budget would sit in state.yml and land on whatever agent row an
+    // operator later renumbers to G1.
+    expect(state.resumed_at).toBeUndefined();
+  });
+
+  it("writes resumed_at for an agent row, which does get its one session (AC9)", async () => {
+    pauseState("M1");
+    writePlaybook(
+      table(["| M1 | Parser | `agent` | `needs_operator` | — | — |", "| M2 | Wire it up | `agent` | `pending` | — | — |"]) +
+        pauseBlock("M1", { markerTicked: true }),
+    );
+
+    await tryAdvance(PLAN_REL, "need_operator", tmpDir);
+
+    const state = readState(planDir);
+    expect(state.stage).toBe("ready_to_execute");
+    expect(state.resumed_at).toBe("M1");
+    expect(rowStatus(parseExecutionStatus(playbook()), "M1")).toBe("pending");
+  });
+
+  // Reproduces the QA's probe: the block reader is fence-aware, so an unterminated fence ANYWHERE
+  // above the block hides it. Before this, `drive` printed nothing at all and re-listed the task
+  // with the instruction the operator had just followed.
+  it("says why a ticked marker did not resume when a stray fence hides the block", async () => {
+    pauseState("G1");
+    writePlaybook(
+      table(["| G1 | Merge the PRs | `operator` | `pending` | — | — |", "| M2 | Wire it up | `agent` | `pending` | — | — |"]) +
+        "\n````bash\necho hi\n```\n" +
+        pauseBlock("G1", { markerTicked: true }),
+    );
+
+    const result = await tryAdvance(PLAN_REL, "need_operator", tmpDir);
+
+    expect(result.advanced).toBe(false);
+    expect(result.reason).toBe("no_marker");
+    const warnings = vi.mocked(log.warn).mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warnings).toContain(OPERATOR_RESUME_MARKER);
+    expect(warnings).toContain("unterminated code fence");
+  });
+
+  it("stays silent on an unticked marker — that is just a pause in progress", async () => {
+    pauseState("G1");
+    writePlaybook(
+      table(["| G1 | Merge the PRs | `operator` | `pending` | — | — |", "| M2 | Wire it up | `agent` | `pending` | — | — |"]) +
+        pauseBlock("G1", { markerTicked: false }),
+    );
+
+    const result = await tryAdvance(PLAN_REL, "need_operator", tmpDir);
+
+    expect(result.advanced).toBe(false);
+    expect(vi.mocked(log.warn)).not.toHaveBeenCalled();
   });
 
   // An escaping throw here would abort driveCommand for EVERY task, before any is selected.
