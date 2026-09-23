@@ -141,6 +141,17 @@ parses it; the handler in `src/pipeline/handlers/execute.ts` runs it.
 | `Owner` | `agent` or `operator`. An absent column or an empty cell means `agent` |
 | `Status` | `pending`, `in_progress`, `done` or `needs_operator` |
 
+**Fenced and quoted text is not the document.** Both the table parser and the pause-block reader
+scan through `src/pipeline/markdown-scan.ts`, so a heading, a table row or a checkbox inside a
+``` fence or behind a `> ` is a picture of one, never the thing itself. That is what lets the
+plan and execute prompts carry a worked example of this very table without an agent's quoting it
+back handing the loop a second table to execute. Two consequences worth knowing:
+
+- If the only "Execution Status" heading in the file is fenced, the error says so and names the
+  line — it does not claim the heading is missing.
+- An **unterminated** fence swallows everything after it, as CommonMark says it should. If a
+  ticked resume marker does not resume, `drive` names the stray fence as the likely cause.
+
 ### One session per milestone
 
 The table is the source of order. On every pass the handler takes the **first row whose status

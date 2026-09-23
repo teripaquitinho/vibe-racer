@@ -3,9 +3,12 @@
  * single cell back.
  *
  * Pure by design: no `fs`, no `git`, no logging, and no imports from the pipeline or state
- * layers. That purity is what keeps this module mock-free under test and what lets
- * `prompts.ts` interpolate `EXECUTION_TABLE_SPEC` without creating a cycle.
+ * layers beyond `markdown-scan.ts`, a leaf module with no imports of its own. That purity is
+ * what keeps this module mock-free under test and what lets `prompts.ts` interpolate
+ * `EXECUTION_TABLE_SPEC` without creating a cycle.
  */
+
+import { isHeading, isLive, scanLines, type ScannedLine } from "./markdown-scan.js";
 
 export const MILESTONE_STATUSES = [
   "pending",
@@ -186,20 +189,28 @@ interface TableBlock {
 }
 
 /** Every pipe table under the heading, in document order. */
-function collectTableBlocks(lines: string[], from: number, to: number): TableBlock[] {
+function collectTableBlocks(
+  lines: string[],
+  scanned: ScannedLine[],
+  from: number,
+  to: number,
+): TableBlock[] {
   const blocks: TableBlock[] = [];
+  // A `|` row inside a fence is a picture of a table, not a table — the same rule the heading
+  // search above applies, so a fenced example under the real heading is inert too.
+  const live = (i: number): boolean => isLive(scanned[i]) && isTableLine(lines[i]);
   let i = from;
 
   while (i < to) {
-    if (!isTableLine(lines[i])) {
+    if (!live(i)) {
       i++;
       continue;
     }
     const headerLineIndex = i;
     const dataLineIndices: number[] = [];
     i++;
-    if (i < to && ALIGNMENT_RE.test(lines[i].trim())) i++;
-    while (i < to && isTableLine(lines[i])) {
+    if (i < to && isLive(scanned[i]) && ALIGNMENT_RE.test(lines[i].trim())) i++;
+    while (i < to && live(i)) {
       dataLineIndices.push(i);
       i++;
     }
@@ -273,33 +284,48 @@ export function parseExecutionStatus(
   file: string = EXECUTION_PLAYBOOK_FILE,
 ): ExecutionTable {
   const lines = content.split("\n");
+  const scanned = scanLines(lines);
 
+  // Fence- and blockquote-aware, and it has to be: both prompts carry a worked example of this
+  // very table, and a playbook that quotes the contract back would otherwise hand the loop a
+  // table to execute — and `setMilestoneStatus`, which re-parses, a cell to rewrite inside it.
   let headingIndex = -1;
-  for (let i = 0; i < lines.length; i++) {
-    const match = HEADING_RE.exec(lines[i]);
-    if (match && match[1].toLowerCase().includes(EXECUTION_STATUS_HEADING.toLowerCase())) {
-      headingIndex = i;
+  let shadowedIndex = -1;
+  for (const line of scanned) {
+    const match = HEADING_RE.exec(line.raw);
+    if (!match) continue;
+    if (!match[1].toLowerCase().includes(EXECUTION_STATUS_HEADING.toLowerCase())) continue;
+    if (isHeading(line)) {
+      headingIndex = line.index;
       break;
     }
+    if (shadowedIndex === -1) shadowedIndex = line.index;
   }
   if (headingIndex === -1) {
+    // Saying "no heading found" about a file the operator can see the heading in sends them
+    // hunting for the wrong thing. Name the copy we skipped and why.
     throw new ExecutionTableError(
-      `No "${EXECUTION_STATUS_HEADING}" heading found in ${file}. ` +
-        `An execution playbook requires a heading containing "${EXECUTION_STATUS_HEADING}" ` +
-        `above its milestone table.`,
+      shadowedIndex === -1
+        ? `No "${EXECUTION_STATUS_HEADING}" heading found in ${file}. ` +
+          `An execution playbook requires a heading containing "${EXECUTION_STATUS_HEADING}" ` +
+          `above its milestone table.`
+        : `The only "${EXECUTION_STATUS_HEADING}" heading in ${file} is inside a code fence or ` +
+          `a blockquote (line ${shadowedIndex + 1}), so it is an example, not the table. The ` +
+          `loop reads the playbook itself — give the real table a heading of its own.`,
       file,
+      shadowedIndex === -1 ? undefined : shadowedIndex + 1,
     );
   }
 
   let sectionEnd = lines.length;
-  for (let i = headingIndex + 1; i < lines.length; i++) {
-    if (HEADING_RE.test(lines[i])) {
-      sectionEnd = i;
+  for (const line of scanned.slice(headingIndex + 1)) {
+    if (isHeading(line)) {
+      sectionEnd = line.index;
       break;
     }
   }
 
-  const blocks = collectTableBlocks(lines, headingIndex + 1, sectionEnd);
+  const blocks = collectTableBlocks(lines, scanned, headingIndex + 1, sectionEnd);
   if (blocks.length === 0) {
     throw new ExecutionTableError(
       `No table found under the "${EXECUTION_STATUS_HEADING}" heading in ${file} ` +
@@ -471,16 +497,16 @@ Rules:
   branch before it is merged, so those steps come after the pipeline is done.
 - \`needs_operator\` marks a row the agent cannot finish on its own.
 
-Worked example. It is shown WITHOUT its heading on purpose: \`${EXECUTION_PLAYBOOK_FILE}\` carries
-exactly one \`${EXECUTION_STATUS_HEADING}\` heading and it is the real one. Never copy this
-contract into the playbook — a second copy of the heading is a table the loop can execute instead
-of yours.
+Worked example — fenced, and shown without its heading, because it is a picture of a table rather
+than one. \`${EXECUTION_PLAYBOOK_FILE}\` carries exactly one \`${EXECUTION_STATUS_HEADING}\` heading
+and one live table under it; anything fenced or quoted is inert to the loop. Put your rows under
+your own heading — do not copy this contract into the playbook.
 
-Under your \`${EXECUTION_STATUS_HEADING}\` heading:
-
+\`\`\`markdown
 | Milestone | Name | Owner | Status | Commit | Notes |
 |---|---|---|---|---|---|
 | M1 | Table contract + parser | \`agent\` | \`done\` | \`a1b2c3d\` | — |
 | G1 | Operator merges PRs #12 and #14 | \`operator\` | \`pending\` | — | Unblocks M2 |
 | M2 | Wire the parser into the loop | \`agent\` | \`pending\` | — | — |
+\`\`\`
 `;

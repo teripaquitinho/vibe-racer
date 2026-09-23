@@ -10,11 +10,33 @@
 Citations: **I n** = `05_qa.md` §2 issue · **R n** = `05_qa.md` §5 risk · file:line refers to the
 branch as it stands.
 
-**Status — Batch A implemented 2026-09-23, uncommitted.** F2, F3, F4a, F5, F6, F8 and F9 are in the
-working tree; `build`, `typecheck`, `lint` and `test` all pass at **33 files / 648 tests** (baseline
-635). Three pre-existing tests changed as §6 predicted, one of them — `GATE_ID_PATTERN` — keeping
-the half that mattered. The two F2 tests were mutation-checked: both fail with the snapshot order
-put back. Batch B (F1, F4b, F7) is untouched and still wants task #9.
+**Status — both batches implemented 2026-09-23.**
+
+- **Batch A** (F2, F3, F4a, F5, F6, F8, F9) — committed as `1951a09`. Three pre-existing tests
+  changed as §6 predicted, one of them — `GATE_ID_PATTERN` — keeping the half that mattered. The
+  two F2 tests were mutation-checked: both fail with the snapshot order put back.
+- **Batch B** (F1, F4b, F7) — implemented on this branch rather than as task #9, at the operator's
+  instruction. `build`, `typecheck`, `lint` and `test` pass at **34 files / 662 tests** (baseline
+  635). It has not had the QA lap §2 argued for; that call is the operator's.
+
+Two deviations from this plan, both deliberate:
+
+1. **F3 was narrowed.** The plan had `drive` warn on every non-advancing reason but
+   `incomplete_checklist`. Wrong: `no_marker` is the everyday state of a pause in progress, so
+   that would fire on every `drive` for every paused task. The fence diagnosis went into
+   `advancement.ts`, which has the content in hand and can tell "hidden block" from "not ticked
+   yet"; `drive` warns only for `no_questions_file`. A test pins the silence.
+2. **F4b did not restore the heading.** The plan said fencing would let the worked example carry
+   its `## Execution Status` heading again. It ships fenced *and* headingless: fenced-and-headed
+   is safe only until an agent copies the example and drops the fence markers, which is exactly
+   the reformatting agents do. Two independent defences cost nothing here.
+
+One correction to §6: the fixture equivalence check cannot run against `main` — `main` predates
+`execute-table.ts`, which this task created. The baseline is `1951a09` (batch A, pre-F1), against
+which all four real playbooks — `0002`, `0003`, `0004` and this task's own — parse to identical
+rows, header line and line indices. The `fenced-decoy.md` fixture was checked the other way round:
+the pre-F1 parser reads it as `M1, G1, M2` and pauses at a gate that does not exist, the new one
+reads `R1, R2`.
 
 ---
 

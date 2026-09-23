@@ -20,6 +20,8 @@ import {
   EXECUTION_PLAYBOOK_FILE,
 } from "../../src/pipeline/execute-table.js";
 
+import { scanLines } from "../../src/pipeline/markdown-scan.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Fixtures are snapshots. Tests never read `plans/` at run time: a consumer repo has different
@@ -464,6 +466,63 @@ describe("trailingOperatorRows (D11)", () => {
   });
 });
 
+// Issue #1 from the QA report. The parser and `operator-block.ts` read the same file; until they
+// shared `markdown-scan.ts` they disagreed about what a heading is, and the prompts shipped a
+// worked example the agent could quote into the playbook to hijack the loop.
+describe("parseExecutionStatus — fences and blockquotes are not the document", () => {
+  it("skips a quoted contract and reads the operator's real table", () => {
+    const parsed = parseExecutionStatus(fixture("fenced-decoy.md"));
+
+    expect(parsed.rows.map((r) => r.id)).toEqual(["R1", "R2"]);
+    expect(firstUnfinished(parsed)!.id).toBe("R2");
+    // The decoy's gate must not become a pause at a gate that does not exist.
+    expect(operatorGates(parsed)).toEqual([]);
+  });
+
+  it("writes the status cell into the real row, not the quoted example", () => {
+    const written = setMilestoneStatus(fixture("fenced-decoy.md"), "R2", "done");
+
+    expect(written).toContain("| R2 | The real second milestone | `agent` | `done` |");
+    // Byte-identical example: the operator's own quoted contract is not the pipeline's to edit.
+    expect(written).toContain("| M2 | Wire the parser into the loop | `agent` | `pending` | — | — |");
+  });
+
+  it("says the heading is fenced rather than claiming there is none", () => {
+    const fenced = ["# Playbook", "", "```markdown", "## Execution Status", "", "| Milestone | Status |", "|---|---|", "| M1 | `pending` |", "```", ""].join("\n");
+
+    try {
+      parseExecutionStatus(fenced, "plans/0009_x/04_execute.md");
+      expect.unreachable("a fenced heading is not a heading");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ExecutionTableError);
+      const error = e as ExecutionTableError;
+      expect(error.message).toContain("inside a code fence or a blockquote");
+      expect(error.line).toBe(4);
+    }
+  });
+
+  it("ignores a fenced table under the real heading", () => {
+    const content = [
+      "## Execution Status",
+      "",
+      "The shape to follow:",
+      "",
+      "```markdown",
+      "| Milestone | Status |",
+      "|---|---|",
+      "| EXAMPLE | `pending` |",
+      "```",
+      "",
+      "| Milestone | Status |",
+      "|---|---|",
+      "| M1 | `done` |",
+      "",
+    ].join("\n");
+
+    expect(parseExecutionStatus(content).rows.map((r) => r.id)).toEqual(["M1"]);
+  });
+});
+
 describe("EXECUTION_TABLE_SPEC — the drift guard", () => {
   it("is built from the unions: every status and owner appears in it", () => {
     for (const status of MILESTONE_STATUSES) {
@@ -505,8 +564,13 @@ describe("EXECUTION_TABLE_SPEC — the drift guard", () => {
     expect(headings).toEqual([]);
   });
 
-  it("still shows the example rows, heading or no heading", () => {
+  it("still shows the example rows, and shows them fenced", () => {
     expect(EXECUTION_TABLE_SPEC).toContain("| G1 | Operator merges PRs #12 and #14 |");
-    expect(EXECUTION_TABLE_SPEC).toContain(`Under your \`${EXECUTION_STATUS_HEADING}\` heading:`);
+
+    // Belt and braces: no heading to copy (the loop takes the first one in the file), and the
+    // rows are fenced, so even pasted under the operator's real heading they stay inert.
+    const scanned = scanLines(EXECUTION_TABLE_SPEC.split("\n"));
+    const exampleRow = scanned.find((line) => line.raw.startsWith("| G1 |"))!;
+    expect(exampleRow.fenced).toBe(true);
   });
 });

@@ -19,6 +19,8 @@
  * at a partial tick).
  */
 
+import { FENCE_RE, isHeading, scanLines, type ScannedLine } from "./markdown-scan.js";
+
 export const OPERATOR_RESUME_MARKER = "Operator actions complete — resume execution";
 
 /** Captures the pause number and the row ID. Only ever applied to a line the scanner cleared. */
@@ -98,47 +100,6 @@ export interface PauseBlockState {
 
 // --- Scanning -------------------------------------------------------------------------------
 
-interface ScannedLine {
-  /** Index into the array that was scanned, not necessarily into the whole file. */
-  index: number;
-  raw: string;
-  /** Inside a fenced block, or the fence delimiter itself. */
-  fenced: boolean;
-  /** A blockquote line — where the agent's message lives. */
-  quoted: boolean;
-}
-
-const FENCE_RE = /^(`{3,}|~{3,})/;
-
-/**
- * Walks lines tracking fence state for both ``` and ~~~ runs, matching run length, so a fence
- * inside the agent's quoted message cannot close the fence that contains it.
- */
-function scanLines(lines: string[]): ScannedLine[] {
-  const out: ScannedLine[] = [];
-  let fence: { char: string; length: number } | null = null;
-
-  lines.forEach((raw, index) => {
-    const trimmed = raw.trim();
-    const match = FENCE_RE.exec(trimmed);
-    let fenced = fence !== null;
-
-    if (match) {
-      const char = match[1][0];
-      const length = match[1].length;
-      if (fence === null) {
-        fence = { char, length };
-        fenced = true;
-      } else if (char === fence.char && length >= fence.length && trimmed === match[1]) {
-        fence = null;
-        fenced = true;
-      }
-    }
-    out.push({ index, raw, fenced, quoted: /^\s*>/.test(raw) });
-  });
-  return out;
-}
-
 interface Checkbox {
   ticked: boolean;
   text: string;
@@ -162,10 +123,6 @@ function checkbox(line: ScannedLine): Checkbox | null {
 
 function isResumeMarker(box: Checkbox): boolean {
   return box.text.toLowerCase() === OPERATOR_RESUME_MARKER.toLowerCase();
-}
-
-function isHeading(line: ScannedLine): boolean {
-  return !line.fenced && !line.quoted && /^#{1,6}\s/.test(line.raw);
 }
 
 function findPauseBlocks(content: string): PauseBlockLocation[] {

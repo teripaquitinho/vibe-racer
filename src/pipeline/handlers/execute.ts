@@ -17,6 +17,7 @@ import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { executeMilestonePrompt } from "../../claude/prompts.js";
 import {
+  SecretDetectedError,
   commitAll,
   createGit,
   repoSnapshot,
@@ -394,12 +395,32 @@ async function pause(
 
   pauseForOperator(paths.absPlanPath, { milestone: row.id, reason: input.why });
 
-  const hash = await commitAll(
-    git,
-    `vibe-racer: paused for operator at ${row.id} for #${ctx.taskNumber}`,
-    ctx.cwd,
-  );
-  if (hash) log.dim(`Pause committed: ${hash}`);
+  // The ONE place a `SecretDetectedError` is caught rather than raised. The scan itself is
+  // untouched and nothing is committed: this catch exists because `withErrorHandling` rethrows
+  // the error before `setError` runs, and by this line `state.yml` already says `need_operator`.
+  // Left uncaught, the operator gets a stack trace, a paused task and a dirty working tree —
+  // the opposite of the clean tree a pause promises, recoverable only by a hand edit. The pause
+  // still stands; what changes is that the operator is told what to do about it.
+  try {
+    const hash = await commitAll(
+      git,
+      `vibe-racer: paused for operator at ${row.id} for #${ctx.taskNumber}`,
+      ctx.cwd,
+    );
+    if (hash) log.dim(`Pause committed: ${hash}`);
+  } catch (err) {
+    if (!(err instanceof SecretDetectedError)) throw err;
+    log.warn(`The pause at ${row.id} is written but NOT committed: ${err.message}`);
+    log.warn(
+      `A secret pattern was found in the working tree — usually a token the agent quoted in its ` +
+        `own message inside ${paths.playbookLabel}. Nothing was committed and nothing was ` +
+        `redacted for you.`,
+    );
+    log.warn(
+      "Redact it, commit by hand, then tick the resume marker as usual. The task stays paused " +
+        "at this milestone either way.",
+    );
+  }
 
   // The pit board. A pause is the pipeline working as designed, so neither "error" nor "failed"
   // appears here, and it is never styled red.

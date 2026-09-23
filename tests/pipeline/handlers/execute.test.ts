@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import path from "path";
-import { findLastPauseBlock } from "../../../src/pipeline/operator-block.js";
+import {
+  OPERATOR_RESUME_MARKER,
+  findLastPauseBlock,
+} from "../../../src/pipeline/operator-block.js";
 import type { TaskContext } from "../../../src/pipeline/types.js";
 
 // --- Fakes ------------------------------------------------------------------------------------
@@ -58,11 +61,16 @@ vi.mock("../../../src/claude/prompts.js", () => ({
   executeMilestonePrompt: (...args: unknown[]) => mockExecuteMilestonePrompt(...args),
 }));
 
-vi.mock("../../../src/git/operations.js", () => ({
-  createGit: vi.fn().mockReturnValue({}),
-  commitAll: (...args: unknown[]) => mockCommitAll(...args),
-  repoSnapshot: (...args: unknown[]) => mockRepoSnapshot(...args),
-}));
+vi.mock("../../../src/git/operations.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../src/git/operations.js")>();
+  return {
+    createGit: vi.fn().mockReturnValue({}),
+    commitAll: (...args: unknown[]) => mockCommitAll(...args),
+    repoSnapshot: (...args: unknown[]) => mockRepoSnapshot(...args),
+    // Not a stub: `instanceof` has to match the class the handler imports.
+    SecretDetectedError: actual.SecretDetectedError,
+  };
+});
 
 vi.mock("../../../src/state/store.js", () => ({
   readState: (...args: unknown[]) => mockReadState(...(args as [])),
@@ -575,6 +583,46 @@ describe("handleExecute — the driver", () => {
     const block = lastBlock(files.get(PLAYBOOK_PATH)!);
     expect(block).toContain("made no changes to the repository");
     expect(block).not.toContain("committed work but did not finish this milestone");
+  });
+
+  // The pause commit runs the secret scan, and `withErrorHandling` rethrows a SecretDetectedError
+  // before `setError` — by then state.yml already says need_operator. Uncaught, the operator got a
+  // stack trace, a paused task and a dirty tree, recoverable only by hand.
+  it("keeps the pause standing when the secret scan blocks its commit, and says how to recover", async () => {
+    files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `pending` | | |"]));
+    const { SecretDetectedError } = await import("../../../src/git/operations.js");
+    mockCommitAll.mockImplementation(async (_git: unknown, message: string) => {
+      if (message.includes("paused for operator")) {
+        throw new SecretDetectedError([
+          { file: "plans/0005_infinite-loop-fix/04_execute.md", reason: "OpenAI API key" },
+        ]);
+      }
+      return "exec123";
+    });
+
+    const { handleExecute } = await loadHandler();
+    await handleExecute(CTX);
+
+    // The pause itself stands: the block is written and the stage was already set.
+    expect(mockPauseForOperator).toHaveBeenCalled();
+    expect(lastBlock(files.get(PLAYBOOK_PATH)!)).toContain(OPERATOR_RESUME_MARKER);
+
+    const { log } = await import("../../../src/utils/logger.js");
+    const warnings = vi.mocked(log.warn).mock.calls.flat().join(" ");
+    expect(warnings).toContain("written but NOT committed");
+    expect(warnings).toContain("04_execute.md");
+    expect(warnings).toContain("Redact it");
+  });
+
+  it("does not swallow any other failure of the pause commit", async () => {
+    files.set(PLAYBOOK_PATH, playbook(["| M1 | Parser | `pending` | | |"]));
+    mockCommitAll.mockImplementation(async (_git: unknown, message: string) => {
+      if (message.includes("paused for operator")) throw new Error("disk full");
+      return "exec123";
+    });
+
+    const { handleExecute } = await loadHandler();
+    await expect(handleExecute(CTX)).rejects.toThrow("disk full");
   });
 
   it("AC13 — a playbook with no Owner column gets the legacy note on a stall", async () => {
