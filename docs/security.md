@@ -138,8 +138,10 @@ detour matter here.
   agent's final message. The message is quoted **inertly** — behind `> ` and inside a `~~~`
   fence longer than any run it contains — so a checkbox, a heading or a ticked resume marker in
   the agent's own words is never counted: a session cannot resume its own task through its
-  final message. The block is staged by the milestone commit like any other file, so it passes
-  through the pre-commit secret scan below.
+  final message. The block is committed by the pause's own commit (`vibe-racer: paused for
+  operator at …`), which passes through the pre-commit secret scan below like every other
+  commit — and if the scan blocks it, the task stays paused with the block uncommitted (see
+  "Pre-Commit Secret Scanning").
 - **The execute session has `Edit` on the playbook.** An execute session can write
   `04_execute.md` freely, including a pause block of its own. The handler therefore
   **normalises, never trusts** an agent-authored block: it unticks every checkbox in it, the
@@ -185,6 +187,14 @@ and the partial-work commit on error — scans staged files before committing:
 - API key patterns (`sk-...`)
 
 Files up to 100 KB are content-scanned. On match, flagged files are unstaged and the commit is blocked.
+
+What happens next depends on which commit it was. For a lap, milestone or completion commit the
+error propagates and `drive` stops with it — it is never buried and never turns into
+`stage: error`. For the **pause commit** the handler catches it at that one call site, because by
+then `state.yml` already says `need_operator`: the task stays paused, `04_execute.md` holds the
+pause block uncommitted, and the terminal names the file and says what to do. Nothing is redacted
+for you and nothing is committed; you redact the token, commit by hand, then tick the resume
+marker as usual. The scan itself is unchanged by that catch.
 
 ## Audit Log
 

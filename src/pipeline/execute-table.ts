@@ -290,30 +290,40 @@ export function parseExecutionStatus(
   // very table, and a playbook that quotes the contract back would otherwise hand the loop a
   // table to execute — and `setMilestoneStatus`, which re-parses, a cell to rewrite inside it.
   let headingIndex = -1;
-  let shadowedIndex = -1;
+  let shadowed: ScannedLine | null = null;
   for (const line of scanned) {
-    const match = HEADING_RE.exec(line.raw);
+    // A quoted heading is not a heading, but it IS the copy the operator can see, so it is
+    // matched with its `> ` prefixes stripped for the bookkeeping below and nothing else.
+    const text = line.quoted ? line.raw.replace(/^(\s*>\s?)+/, "") : line.raw;
+    const match = HEADING_RE.exec(text);
     if (!match) continue;
     if (!match[1].toLowerCase().includes(EXECUTION_STATUS_HEADING.toLowerCase())) continue;
     if (isHeading(line)) {
       headingIndex = line.index;
       break;
     }
-    if (shadowedIndex === -1) shadowedIndex = line.index;
+    if (shadowed === null) shadowed = line;
   }
   if (headingIndex === -1) {
     // Saying "no heading found" about a file the operator can see the heading in sends them
-    // hunting for the wrong thing. Name the copy we skipped and why.
+    // hunting for the wrong thing. Name the copy we skipped, why, and — for a fence — the
+    // delimiter that opened it, which is the line they actually need to fix.
+    const where =
+      shadowed === null
+        ? null
+        : shadowed.fenced && shadowed.fenceStart !== undefined
+          ? `inside a code fence opened at line ${shadowed.fenceStart + 1}`
+          : "inside a blockquote";
     throw new ExecutionTableError(
-      shadowedIndex === -1
+      shadowed === null || where === null
         ? `No "${EXECUTION_STATUS_HEADING}" heading found in ${file}. ` +
           `An execution playbook requires a heading containing "${EXECUTION_STATUS_HEADING}" ` +
           `above its milestone table.`
-        : `The only "${EXECUTION_STATUS_HEADING}" heading in ${file} is inside a code fence or ` +
-          `a blockquote (line ${shadowedIndex + 1}), so it is an example, not the table. The ` +
-          `loop reads the playbook itself — give the real table a heading of its own.`,
+        : `The only "${EXECUTION_STATUS_HEADING}" heading in ${file} is at line ` +
+          `${shadowed.index + 1}, ${where}, so it is an example, not the table. The loop ` +
+          `reads the playbook itself — give the real table a heading of its own.`,
       file,
-      shadowedIndex === -1 ? undefined : shadowedIndex + 1,
+      shadowed === null ? undefined : shadowed.index + 1,
     );
   }
 

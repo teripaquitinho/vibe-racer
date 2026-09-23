@@ -496,9 +496,46 @@ describe("parseExecutionStatus — fences and blockquotes are not the document",
     } catch (e) {
       expect(e).toBeInstanceOf(ExecutionTableError);
       const error = e as ExecutionTableError;
-      expect(error.message).toContain("inside a code fence or a blockquote");
+      expect(error.message).toContain("is at line 4, inside a code fence opened at line 3");
       expect(error.line).toBe(4);
     }
+  });
+
+  // Batch B QA finding B1: the fenced wording used to promise a blockquote case it could not
+  // produce, because the heading regex ran on the raw line and `> ## …` never matched it.
+  it("names the line of a heading that exists only inside a blockquote", () => {
+    const quoted = ["# Playbook", "", "> ## Execution Status", ">", "> | Milestone | Status |", "> |---|---|", "> | Q1 | `pending` |", ""].join("\n");
+
+    try {
+      parseExecutionStatus(quoted, "plans/0009_x/04_execute.md");
+      expect.unreachable("a quoted heading is not a heading");
+    } catch (e) {
+      expect(e).toBeInstanceOf(ExecutionTableError);
+      const error = e as ExecutionTableError;
+      expect(error.message).toContain("is at line 3, inside a blockquote");
+      expect(error.line).toBe(3);
+    }
+  });
+
+  // Batch B QA finding B2: a ``` indented four or more spaces is an indented code block in
+  // CommonMark, not a fence. Trimming before the match opened a fence that ran to end of file
+  // and the real table below it stopped parsing.
+  it("reads the real table below an indented code block that begins with ```", () => {
+    const content = [
+      "# Playbook",
+      "",
+      "    ```",
+      "    literal, not a fence",
+      "",
+      "## Execution Status",
+      "",
+      "| Milestone | Status |",
+      "|---|---|",
+      "| M1 | `pending` |",
+      "",
+    ].join("\n");
+
+    expect(parseExecutionStatus(content).rows.map((r) => r.id)).toEqual(["M1"]);
   });
 
   it("ignores a fenced table under the real heading", () => {

@@ -17,11 +17,22 @@ export interface ScannedLine {
   raw: string;
   /** Inside a fenced block, or the fence delimiter itself. */
   fenced: boolean;
+  /**
+   * Index of the delimiter that opened the fence this line is in — the opener's own index for
+   * the opener and the closer alike. Only present when `fenced`. It is what lets an error name
+   * the stray fence rather than the line it swallowed.
+   */
+  fenceStart?: number;
   /** A blockquote line — where a pause block's quoted agent message lives. */
   quoted: boolean;
 }
 
-export const FENCE_RE = /^(`{3,}|~{3,})/;
+/**
+ * A fence delimiter may be indented by up to three spaces, as CommonMark allows. Four or more
+ * — or a tab — is an indented code block, and a ``` inside one is literal text, not a fence.
+ * Matched against the raw line, never a trimmed one, for exactly that reason.
+ */
+export const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
 
 /**
  * Walks lines tracking fence state for both ``` and ~~~ runs, matching run length, so a fence
@@ -29,29 +40,33 @@ export const FENCE_RE = /^(`{3,}|~{3,})/;
  *
  * A fence that is never closed swallows the rest of the file, exactly as CommonMark says it
  * does. That is a real hazard for the reader — a stray ```` ``` ```` above a pause block hides
- * it — so callers that can be defeated this way say so rather than failing silently.
+ * it — so callers that can be defeated this way say so rather than failing silently, and
+ * `fenceStart` tells them which line to name.
  */
 export function scanLines(lines: string[]): ScannedLine[] {
   const out: ScannedLine[] = [];
-  let fence: { char: string; length: number } | null = null;
+  let fence: { char: string; length: number; start: number } | null = null;
 
   lines.forEach((raw, index) => {
-    const trimmed = raw.trim();
-    const match = FENCE_RE.exec(trimmed);
+    const match = FENCE_RE.exec(raw);
     let fenced = fence !== null;
+    let fenceStart = fence?.start;
 
     if (match) {
       const char = match[1][0];
       const length = match[1].length;
       if (fence === null) {
-        fence = { char, length };
+        fence = { char, length, start: index };
         fenced = true;
-      } else if (char === fence.char && length >= fence.length && trimmed === match[1]) {
+        fenceStart = index;
+      } else if (char === fence.char && length >= fence.length && raw.trim() === match[1]) {
         fence = null;
         fenced = true;
       }
     }
-    out.push({ index, raw, fenced, quoted: /^\s*>/.test(raw) });
+    const line: ScannedLine = { index, raw, fenced, quoted: /^\s*>/.test(raw) };
+    if (fenced && fenceStart !== undefined) line.fenceStart = fenceStart;
+    out.push(line);
   });
   return out;
 }

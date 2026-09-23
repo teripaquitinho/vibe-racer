@@ -23,7 +23,7 @@ vibe-racer runs Claude Code sessions with `bypassPermissions` — the AI agent e
 - **Bash filtering**: 18 dangerous commands are blocked (`curl`, `wget`, `ssh`, `sudo`, etc.). Interpreter-aware detection catches inline network calls via `node -e`, `python3 -c`, `ruby -e`, `perl -e`, `php -r`. Obfuscation heuristics catch base64 encoding and character code construction patterns.
 - **Review-stage restrictions**: During the objective, product, design and plan reviews, Write and Edit are limited to the task's plan folder and Bash is not available. The QA lap is also write-jailed to the plan folder but **has Bash**, so it can run the build, lint and tests it reports on without being able to fix what it finds. The decision session opts into the same jail via `jailToPlanDir`.
 - **Human stages start no session**: `need_operator` and every other pit stop grant nothing because nothing runs.
-- **Pre-commit secret scanning**: Every commit scans staged files for API keys, private key blocks, credentials files, and other secret patterns — including the operator pause block, which quotes the agent's final message into `04_execute.md`. Flagged files are unstaged and the commit is blocked.
+- **Pre-commit secret scanning**: Every commit scans staged files for API keys, private key blocks, credentials files, and other secret patterns — including the operator pause block, which quotes the agent's final message into `04_execute.md`. Flagged files are unstaged and the commit is blocked. A blocked pause commit leaves the task at `need_operator` with the pause block written but uncommitted; you redact and commit by hand, then resume as usual.
 - **Audit log**: All guard denials are logged to `.vibe-racer/audit.log` as append-only JSONL.
 
 ### Trust boundary
