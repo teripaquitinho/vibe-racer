@@ -3,7 +3,16 @@ import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import path from "path";
 import os from "os";
 import { stringify } from "yaml";
-import { readState, writeState, updateStage, setError } from "../../src/state/store.js";
+import {
+  readState,
+  writeState,
+  updateStage,
+  setError,
+  validStage,
+  pauseForOperator,
+  resumeFromOperator,
+  clearResumedAt,
+} from "../../src/state/store.js";
 
 let tmpDir: string;
 
@@ -177,5 +186,138 @@ describe("writeState — validate-on-write", () => {
     expect(() =>
       writeState(tmpDir, { stage: "not_a_real_stage", title: "Bad" } as any),
     ).toThrow();
+  });
+});
+
+
+describe("validStage", () => {
+  it("returns a real stage unchanged", () => {
+    expect(validStage("ready_to_execute")).toBe("ready_to_execute");
+    expect(validStage("need_operator")).toBe("need_operator");
+  });
+
+  it("returns null for an unknown string", () => {
+    expect(validStage("nonsense")).toBeNull();
+  });
+
+  it("returns null for undefined", () => {
+    expect(validStage(undefined)).toBeNull();
+  });
+});
+
+describe("writeState at need_operator", () => {
+  it("points prev and next at paused_stage", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test" });
+    writeState(tmpDir, {
+      stage: "need_operator",
+      title: "Test",
+      paused_stage: "ready_to_execute",
+    });
+    const state = readState(tmpDir);
+    expect(state.prev).toBe("ready_to_execute");
+    expect(state.next).toBe("ready_to_execute");
+  });
+
+  it("defaults both to ready_to_execute when paused_stage is absent", () => {
+    writeState(tmpDir, { stage: "need_operator", title: "Test" });
+    const state = readState(tmpDir);
+    expect(state.prev).toBe("ready_to_execute");
+    expect(state.next).toBe("ready_to_execute");
+  });
+
+  // The `?? "ready_to_execute"` in the need_operator branch is a floor, not a feature: an
+  // invalid paused_stage never reaches disk, because the schema rejects it either on the way in
+  // or on the way out.
+  it("refuses to persist a paused_stage that is not a stage", () => {
+    writeFileSync(
+      path.join(tmpDir, "state.yml"),
+      stringify({ stage: "need_operator", title: "Test", paused_stage: "nonsense" }),
+      "utf-8",
+    );
+    expect(() => readState(tmpDir)).toThrow();
+    expect(() =>
+      writeState(tmpDir, {
+        stage: "need_operator",
+        title: "Test",
+        paused_stage: "nonsense",
+      } as never),
+    ).toThrow();
+  });
+});
+
+describe("pauseForOperator", () => {
+  it("writes all four pause fields", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test" });
+    pauseForOperator(tmpDir, { milestone: "G1", reason: "PRs #12 and #14 are not merged" });
+    const state = readState(tmpDir);
+    expect(state.stage).toBe("need_operator");
+    expect(state.paused_stage).toBe("ready_to_execute");
+    expect(state.operator_reason).toBe("PRs #12 and #14 are not merged");
+    expect(state.operator_milestone).toBe("G1");
+  });
+
+  it("honours an explicit pausedStage", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test" });
+    pauseForOperator(tmpDir, { milestone: "M3", reason: "why", pausedStage: "ai_qa" });
+    expect(readState(tmpDir).paused_stage).toBe("ai_qa");
+  });
+
+  it("clears resumed_at", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test", resumed_at: "M2" });
+    pauseForOperator(tmpDir, { milestone: "M3", reason: "why" });
+    expect(readState(tmpDir).resumed_at).toBeUndefined();
+  });
+
+  it("preserves unrelated fields", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test", trivial: true });
+    pauseForOperator(tmpDir, { milestone: "M3", reason: "why" });
+    const state = readState(tmpDir);
+    expect(state.title).toBe("Test");
+    expect(state.trivial).toBe(true);
+  });
+});
+
+describe("resumeFromOperator", () => {
+  it("returns the milestone and restores the paused stage", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test" });
+    pauseForOperator(tmpDir, { milestone: "G1", reason: "why" });
+    const result = resumeFromOperator(tmpDir);
+    expect(result).toEqual({ pausedStage: "ready_to_execute", milestone: "G1" });
+    expect(readState(tmpDir).stage).toBe("ready_to_execute");
+  });
+
+  it("writes resumed_at and clears every pause field", () => {
+    writeTmpState({ stage: "ready_to_execute", title: "Test" });
+    pauseForOperator(tmpDir, { milestone: "G1", reason: "why" });
+    resumeFromOperator(tmpDir);
+    const state = readState(tmpDir);
+    expect(state.resumed_at).toBe("G1");
+    expect(state.paused_stage).toBeUndefined();
+    expect(state.operator_reason).toBeUndefined();
+    expect(state.operator_milestone).toBeUndefined();
+  });
+
+  it("falls back to ready_to_execute when paused_stage was never written", () => {
+    writeTmpState({ stage: "need_operator", title: "Test" });
+    const result = resumeFromOperator(tmpDir);
+    expect(result.pausedStage).toBe("ready_to_execute");
+    expect(result.milestone).toBeUndefined();
+    expect(readState(tmpDir).stage).toBe("ready_to_execute");
+  });
+});
+
+describe("clearResumedAt", () => {
+  it("removes only resumed_at", () => {
+    writeTmpState({
+      stage: "ready_to_execute",
+      title: "Test",
+      resumed_at: "M2",
+      trivial: true,
+    });
+    clearResumedAt(tmpDir);
+    const state = readState(tmpDir);
+    expect(state.resumed_at).toBeUndefined();
+    expect(state.stage).toBe("ready_to_execute");
+    expect(state.trivial).toBe(true);
   });
 });
