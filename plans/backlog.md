@@ -31,6 +31,24 @@ inserted message is inert. About a session's work.
 the objective's "nothing the agent explained is thrown away" is met substantively, not literally,
 and that is recorded as an accepted risk in #5's decision checklist.
 
+### `depends_on` — a task that waits for another task's merge
+
+| | |
+|---|---|
+| **Source** | #6 `00_objective.md` "Out of scope"; the mid-execution merge-gate incident of 2026-09-24 |
+| **Effort / risk** | M / Low |
+| **Where** | `src/cli/new.ts`, `src/state/schema.ts`, `src/cli/drive.ts`, `src/cli/pitwall.ts` |
+
+**What.** A dependency on another task's work is a sequencing decision, not a gate (#6, milestone
+1). Today that decision lives in the operator's head. `new --after 0004` would record
+`depends_on: [4]` in `state.yml`; `drive` would refuse to start the execute lap (or to leave
+`need_objective`) until `git merge-base --is-ancestor vibe-racer/0004_… main` holds, naming the
+dependency; `pitwall` would show "waits for #4". The merge stays the operator's and happens after
+#4's `done`, which is exactly when it should.
+
+**Trigger.** A second task that has to wait for another one, once #6 has removed the gate-row
+way of expressing it.
+
 ---
 
 ## Process notes
