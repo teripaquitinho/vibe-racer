@@ -1,0 +1,6 @@
+stage: need_decision
+title: infinite-loop-fix
+created: 2026-09-17T21:33:34.606Z
+updated: 2026-09-23T05:54:04.887Z
+prev: cleanup_ready
+next: done

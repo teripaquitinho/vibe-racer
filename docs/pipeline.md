@@ -81,18 +81,19 @@ The race engineer works as a **Software Engineer**. Validates answers, generates
 
 ### Pit stop: Review the plan (`need_execution`)
 
-Review the implementation plan and execution playbook. Tick the checkbox to start execution.
+Review the implementation plan and execution playbook. Tick the checkbox to start execution. If the playbook declares steps *you* own — merging a prerequisite PR, supplying credentials, a visual check — sign-off lists them first, so you know what you owe before the lap starts.
 
 ### Race engineer: Execute milestones (`ready_to_execute`)
 
-The race engineer executes all milestones continuously as a **Software Engineer**:
+The Execution Status table in `04_execute.md` is both the order and the state. The race engineer runs **one session per milestone** as a **Software Engineer**, always taking the first row that is not finished:
 1. Reads the milestone description
 2. Implements the code
 3. Runs build, lint, and tests
-4. Commits the changes
-5. Moves to the next milestone
+4. Marks the row `done` — and the pipeline commits it
 
-Progress is tracked in `04_execute.md` with checkboxes for each milestone.
+The lap ends when no agent-owned row is left unfinished.
+
+It cannot run forever. If a milestone needs something the race engineer must not do — push, merge a PR, deploy, anything outside the repo — the task takes the `need_operator` detour: it writes what it needs into `04_execute.md` as a checklist and hands the car back to you. Do the work, tick the boxes and the resume marker, and `drive` again — execution continues in that same invocation. See [Execution Loop](/how-it-works#execution-loop) for the bounds and the three ways out.
 
 **Output:** Working code, committed milestone by milestone.
 
@@ -196,4 +197,7 @@ cleanup_ready -> need_decision -> done
 `state.yml` is owned by the pipeline. The guard denies `Write` and `Edit` to any `state.yml`
 under `plans_dir`, at every stage — only vibe-racer itself moves a task between stages.
 
-The `error` state can be entered from any race engineer phase if the session fails. Use `vibe-racer drive --retry` to reprocess.
+Two stages sit outside that line:
+
+- **`error`** — entered from any race engineer phase if the session fails. Use `vibe-racer drive --retry` to reprocess.
+- **`need_operator`** — a pit stop the execution lap detours to when a milestone needs you (Lap 5). It always returns to `ready_to_execute`. It is not an error, and `--retry` does not touch it.

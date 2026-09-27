@@ -99,6 +99,34 @@ describe("radioCommand", () => {
     );
   });
 
+  // `radio` filters on isHumanStage, which need_operator satisfies the moment it joins
+  // NON_LINEAR_STAGES — no new plumbing in radio itself. Nothing can pause yet, but the test
+  // belongs beside the change that causes it.
+  it("accepts a need_operator task as eligible", async () => {
+    vi.mocked(discoverTasks).mockReturnValue([
+      {
+        number: 1,
+        slug: "test",
+        title: "Test",
+        stage: "need_operator",
+        planPath: "/tmp/plans/0001_test",
+        operatorMilestone: "G1",
+        operatorReason: "PRs #12 and #14 are not merged",
+      },
+    ]);
+
+    const fakeChild = makeFakeChild();
+    vi.mocked(spawn).mockReturnValue(fakeChild);
+
+    const promise = radioCommand({});
+    await new Promise((r) => setTimeout(r, 10));
+    fakeChild.emit("close", 0);
+    await promise;
+
+    expect(spawn).toHaveBeenCalled();
+    expect(log.dim).not.toHaveBeenCalledWith("No tasks at a review stage right now.");
+  });
+
   it("prints not-found when --task N doesn't exist", async () => {
     vi.mocked(discoverTasks).mockReturnValue([
       { number: 1, slug: "test", title: "Test", stage: "need_plan", planPath: "/tmp/plans/0001_test" },

@@ -55,9 +55,10 @@ vibe-racer pitwall --all
 |---|---|
 | `--all` | Include completed tasks in the output |
 
-**Output sections:**
-- **Waiting on race engineer** -- tasks at agent-actionable laps
-- **Waiting at pit stop** -- tasks waiting for human review
+**Output sections**, in the order they print:
+- **Waiting on agent** -- tasks at race-engineer-actionable laps
+- **Waiting on operator** -- tasks paused mid-execution waiting on you, each with the milestone it stopped at, the one-line reason, and the playbook to edit
+- **Waiting on human** -- tasks waiting for review at an ordinary pit stop
 - **Errors** -- tasks that failed during race engineer processing
 - **Done** -- completed tasks (only with `--all`)
 - **Orphan branches** -- git branches with no matching task
@@ -92,6 +93,13 @@ vibe-racer drive --retry
 If multiple tasks are actionable, prompts you to choose.
 
 **After execution:** the last milestone does not end the task. `drive` advances it to `ai_qa` and prints a hint — run `drive` again to start the QA lap, which writes `05_qa.md`.
+
+**Operator pauses:** if the execution lap needs something you own, it stops at `need_operator` and
+`drive` names the milestone, the reason and the playbook to edit. Tick every item and the resume
+marker in `04_execute.md`, then run `drive` again — the task returns to `ready_to_execute` and
+execution continues in that same invocation. A pause is not an error and `--retry` does not touch
+it. Task state lives on the task's branch, so if you moved to `main` to do the work, check the
+branch back out first. See [Execution Loop](/how-it-works#execution-loop).
 
 **`--retry`:** when a session fails, the task moves to `error` and the stage it failed at is
 recorded in `error_stage`. `--retry` reads that field, restores the task to that stage, and

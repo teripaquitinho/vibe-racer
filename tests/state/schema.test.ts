@@ -125,8 +125,42 @@ describe("stateSchema", () => {
     ).toThrow();
   });
 
-  it("contains exactly 16 stages", () => {
-    expect(STAGES.length).toBe(16);
+  it("contains exactly 17 stages", () => {
+    expect(STAGES.length).toBe(17);
+  });
+
+  it("parses need_operator stage", () => {
+    const result = stateSchema.parse({ stage: "need_operator", title: "Test" });
+    expect(result.stage).toBe("need_operator");
+  });
+
+  it("accepts the four operator-pause fields", () => {
+    const result = stateSchema.parse({
+      stage: "need_operator",
+      title: "Test",
+      paused_stage: "ready_to_execute",
+      operator_reason: "PRs #12 and #14 are not merged",
+      operator_milestone: "G1",
+      resumed_at: "G1",
+    });
+    expect(result.paused_stage).toBe("ready_to_execute");
+    expect(result.operator_reason).toBe("PRs #12 and #14 are not merged");
+    expect(result.operator_milestone).toBe("G1");
+    expect(result.resumed_at).toBe("G1");
+  });
+
+  it("accepts state with no operator-pause fields (backward compat)", () => {
+    const result = stateSchema.parse({ stage: "need_objective", title: "Test" });
+    expect(result.paused_stage).toBeUndefined();
+    expect(result.operator_reason).toBeUndefined();
+    expect(result.operator_milestone).toBeUndefined();
+    expect(result.resumed_at).toBeUndefined();
+  });
+
+  it("rejects a paused_stage that is not a stage", () => {
+    expect(() =>
+      stateSchema.parse({ stage: "need_operator", title: "Test", paused_stage: "bogus" }),
+    ).toThrow();
   });
 
   it("parses ai_qa stage", () => {

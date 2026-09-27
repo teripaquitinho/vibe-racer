@@ -6,6 +6,11 @@ import { nextStage, previousStage } from "../pipeline/states.js";
 
 const STATE_FILE = "state.yml";
 
+/** The one membership test for a stage name arriving as a loose string. */
+export function validStage(s: string | undefined): Stage | null {
+  return (STAGES as readonly string[]).includes(s ?? "") ? (s as Stage) : null;
+}
+
 export function readState(planPath: string): TaskState {
   const filePath = path.join(planPath, STATE_FILE);
   const raw = parse(readFileSync(filePath, "utf-8"));
@@ -18,10 +23,13 @@ export function writeState(planPath: string, state: TaskState): void {
   let prev: Stage | null;
   let next: Stage | null;
   if (state.stage === "error") {
-    prev = (STAGES as readonly string[]).includes(state.error_stage ?? "")
-      ? (state.error_stage as Stage)
-      : null;
+    prev = validStage(state.error_stage);
     next = null;
+  } else if (state.stage === "need_operator") {
+    // The detour returns whence it came, so pitwall still renders a forward arrow.
+    const paused = validStage(state.paused_stage) ?? "ready_to_execute";
+    prev = paused;
+    next = paused;
   } else {
     prev = previousStage(state.stage);
     next = nextStage(state.stage);
@@ -35,6 +43,58 @@ export function writeState(planPath: string, state: TaskState): void {
 export function updateStage(planPath: string, newStage: Stage): void {
   const state = readState(planPath);
   writeState(planPath, { ...state, stage: newStage });
+}
+
+// --- Operator pause ---------------------------------------------------------------------------
+// `planPath` for all three helpers is ABSOLUTE. The codebase carries two conventions that
+// disagree silently — handlers pass repo-relative `ctx.planPath` into `updateStage` and get away
+// with it only because the process cwd is the repo root, while `advancement.ts` joins it onto
+// `cwd` first. Getting it wrong here is neither quiet nor contained: `readState` throws ENOENT,
+// and `tryAdvance` runs in `drive`'s un-wrapped loop, so one bad path takes down `drive` for
+// every task before any is selected.
+
+/** Park the task at `need_operator`, recording why and which row stopped. */
+export function pauseForOperator(
+  planPath: string,
+  args: { milestone: string; reason: string; pausedStage?: Stage },
+): void {
+  const state = readState(planPath);
+  writeState(planPath, {
+    ...state,
+    stage: "need_operator",
+    paused_stage: args.pausedStage ?? "ready_to_execute",
+    operator_reason: args.reason,
+    operator_milestone: args.milestone,
+    resumed_at: undefined,
+  });
+}
+
+/**
+ * Send the task back to the stage it paused from. Returns the row ID BEFORE clearing it — the
+ * caller needs it, and a leftover `operator_reason` would otherwise haunt `pitwall` for the rest
+ * of the task's life. Clearing lives here, in one place, so no caller has to remember the list.
+ */
+export function resumeFromOperator(
+  planPath: string,
+): { pausedStage: Stage; milestone?: string } {
+  const state = readState(planPath);
+  const pausedStage = validStage(state.paused_stage) ?? "ready_to_execute";
+  const milestone = state.operator_milestone;
+  writeState(planPath, {
+    ...state,
+    stage: pausedStage,
+    paused_stage: undefined,
+    operator_reason: undefined,
+    operator_milestone: undefined,
+    resumed_at: milestone,
+  });
+  return { pausedStage, milestone };
+}
+
+/** Spend the resume: one write, then never again. */
+export function clearResumedAt(planPath: string): void {
+  const state = readState(planPath);
+  writeState(planPath, { ...state, resumed_at: undefined });
 }
 
 export function setError(

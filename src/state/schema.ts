@@ -11,6 +11,7 @@ export const STAGES = [
   "ai_plan_review",
   "need_execution",
   "ready_to_execute",
+  "need_operator",
   "ai_qa",
   "fine_tuning",
   "cleanup_ready",
@@ -31,6 +32,13 @@ export const stateSchema = z.object({
   trivial: z.boolean().optional(),
   prev: z.enum(STAGES).nullable().optional(),
   next: z.enum(STAGES).nullable().optional(),
+  // Operator-pause fields. Deliberately not folded into error_stage/error_message: pitwall and
+  // drive must tell a pause from a failure without string-inspecting a stage name, and a task
+  // can legitimately error while it carries pause fields.
+  paused_stage: z.enum(STAGES).optional(),   // where to return to — always ready_to_execute in v1
+  operator_reason: z.string().optional(),    // the one-line reason shown to the operator
+  operator_milestone: z.string().optional(), // the paused row's ID
+  resumed_at: z.string().optional(),         // row ID just resumed — drives the retry threshold
 });
 
 export type TaskState = z.infer<typeof stateSchema>;

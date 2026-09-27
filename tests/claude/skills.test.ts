@@ -17,6 +17,11 @@ describe("LAP_BY_STAGE", () => {
     }
   });
 
+  it("has no entry for need_operator — a human stage where no session ever runs", () => {
+    expect(isAgentStage("need_operator")).toBe(false);
+    expect(LAP_BY_STAGE.need_operator).toBeUndefined();
+  });
+
   it("maps each stage to a distinct lap name that exists in DEFAULT_SKILLS", () => {
     const laps = new Set<string>();
     for (const [stage, lap] of Object.entries(LAP_BY_STAGE)) {

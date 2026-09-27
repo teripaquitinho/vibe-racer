@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import path from "path";
 
 vi.mock("../../src/config/loader.js", () => ({
   loadConfig: vi.fn().mockReturnValue({
@@ -155,6 +156,105 @@ describe("pitWallCommand", () => {
 
     const logger = await import("../../src/utils/logger.js");
     expect(logger.log.info).toHaveBeenCalledWith("Waiting on human:");
+  });
+
+  describe("operator pauses", () => {
+    const pausedTask = {
+      number: 5,
+      slug: "infinite-loop-fix",
+      title: "infinite-loop-fix",
+      stage: "need_operator" as const,
+      planPath: path.join(process.cwd(), "plans", "0005_infinite-loop-fix"),
+      operatorMilestone: "G1",
+      operatorReason: "PRs 0,1,2,9,3 not merged",
+    };
+
+    it("renders a paused task with its milestone, reason and file", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([pausedTask]);
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+      await pitWallCommand();
+
+      const logger = await import("../../src/utils/logger.js");
+      expect(logger.log.info).toHaveBeenCalledWith("Waiting on operator:");
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines).toContain("  #5 infinite-loop-fix — paused at G1: PRs 0,1,2,9,3 not merged");
+      expect(lines).toContain("     → edit plans/0005_infinite-loop-fix/04_execute.md");
+      consoleSpy.mockRestore();
+    });
+
+    it("does not also list a paused task under Waiting on human", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([pausedTask]);
+
+      const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+      await pitWallCommand();
+
+      const logger = await import("../../src/utils/logger.js");
+      expect(logger.log.info).not.toHaveBeenCalledWith("Waiting on human:");
+    });
+
+    // AC15: a pause is the pipeline working as designed.
+    it("says neither error nor failed for a paused task", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([pausedTask]);
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+      await pitWallCommand();
+
+      const logger = await import("../../src/utils/logger.js");
+      const output = [
+        ...vi.mocked(logger.log.info).mock.calls,
+        ...vi.mocked(logger.log.warn).mock.calls,
+        ...vi.mocked(logger.log.error).mock.calls,
+        ...vi.mocked(logger.log.dim).mock.calls,
+        ...consoleSpy.mock.calls,
+      ]
+        .flat()
+        .join(" ")
+        .toLowerCase();
+      expect(output).not.toContain("error");
+      expect(output).not.toContain("failed");
+      expect(logger.log.error).not.toHaveBeenCalled();
+      consoleSpy.mockRestore();
+    });
+
+    it("does not report No active tasks when the only active task is paused", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([
+        pausedTask,
+        { number: 1, slug: "auth", title: "Add auth", stage: "done", planPath: "/tmp/plans/0001_auth" },
+      ]);
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+      await pitWallCommand();
+
+      const logger = await import("../../src/utils/logger.js");
+      expect(logger.log.dim).not.toHaveBeenCalledWith(
+        expect.stringContaining("No active tasks"),
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it("renders the pause line without milestone or reason when state carries neither", async () => {
+      const { discoverTasks } = await import("../../src/state/discovery.js");
+      vi.mocked(discoverTasks).mockReturnValue([
+        { ...pausedTask, operatorMilestone: undefined, operatorReason: undefined },
+      ]);
+
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+      const { pitWallCommand } = await import("../../src/cli/pitwall.js");
+      await pitWallCommand();
+
+      const lines = consoleSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines).toContain("  #5 infinite-loop-fix — paused");
+      consoleSpy.mockRestore();
+    });
   });
 
   it("uses singular form for 1 completed task", async () => {

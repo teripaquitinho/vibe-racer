@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`need_operator` stage** — a pit stop outside the linear sequence, entered by the execution lap when a milestone needs the operator and always returning to `ready_to_execute`. `state.yml` records `paused_stage`, `operator_milestone` and a one-line `operator_reason`; the handler writes it, never the agent (Rule 0 unchanged). `pitwall` and `drive` list paused tasks under "waiting on operator" with the reason and the file to edit, `--retry` leaves them alone, and `radio` opens at the stage with a role description written for a pause
+- **Operator gates** — a step vibe-racer must not or cannot take is declared at plan time as its own `Owner = operator` row (`G<n>`) in the Execution Status table, with a matching `## G<n> — <name>` section in `03_plan.md` carrying a `- [ ]` checklist and a read-only `**Verification:**` line. The playbook carries an "Operator gates" section above the sign-off checkbox, and `drive` prints the gates (or "none") when advancing past `need_execution`. A planned gate pauses execution with **no session started**
+- **The operator pause block** (`src/pipeline/operator-block.ts`) — every pause appends a numbered `## Operator actions — pause N (<row>)` block to `04_execute.md`: why it stopped, a checklist, the verification to run on resume, the agent's final message quoted inertly, the resume marker `Operator actions complete — resume execution`, and the task branch to switch back to. Only the last block is ever read; a checkbox behind `> ` is never counted. Resume settles the paused row (gate → `done`, agent row → `pending`), honours hand edits to the table, and continues execution in the same `drive` invocation
+- **The Execution Status table contract** (`src/pipeline/execute-table.ts`) — a real parser for the one table that drives execution, with `Owner` as an optional column defaulting to `agent`, plus `EXECUTION_TABLE_SPEC` and `PAUSE_BLOCK_SPEC`, built from the source unions and interpolated into the plan and execute prompts so the prompts cannot drift from the handler again
+- The QA prompt is told which operator gates the task paused at and opens its report with a diff-coverage statement, because work merged at a gate leaves `git diff main...HEAD`
+
+### Changed
+
+- **`handleExecute` rewritten** around a pure `decideNextStep` / `foldOutcome` core with a thin driver. One session per milestone against the Execution Status table; the log line names the row (`Executing M9 (attempt 2/2, 9 remaining)`) instead of a session counter. Execution stops for four reasons — planned gate, agent-declared `needs_operator`, a stall after `MAX_STALLED_SESSIONS` (2) sessions on one row, or the per-`drive` session cap — and every one of them pauses rather than errors. `countPendingMilestones` and the "agent already committed" line are gone
+- `STAGE_QUESTIONS_FILE` maps each human stage to a `(file, markerText)` pair, and it is the pair that must stay unique. `need_execution` and `need_operator` share `04_execute.md` on different markers; a test enforces the invariant
+- `blocked` is removed from the milestone status union. A legacy playbook that still carries it is parsed as `needs_operator` and pauses, with a block saying an earlier run marked it
+- The plan prompt no longer plans post-execution steps as rows: merge, tag, release and deploy of the task's own work come after QA. The `need_execution` sign-off refuses the tick when the table ends in an operator row with nothing after it, names the rows and unticks the box; the execute prompt tells the agent to leave such a row alone; and the loop completes into `ai_qa` on one instead of pausing
+- The execute prompt carries the `needs_operator` protocol, the explicit no-push / no-PR / no-merge / no-deploy rule, and gate verification with a fallback ladder (read-only check → local refs → the operator's tick, said aloud)
+- `executeMilestonePrompt` takes the milestone row to execute; `qaPrompt` takes the list of gates
+- **One markdown reader** (`src/pipeline/markdown-scan.ts`) — the Execution Status parser and the pause-block reader now share one fence- and blockquote-aware scan. A heading or a table row inside a fence, or behind a `> `, is inert to both; a file whose only "Execution Status" heading is fenced or quoted says exactly that, naming the heading's line and, for a fence, the delimiter that opened it. A delimiter indented four or more spaces is an indented code block, as CommonMark says, not a fence
+- `EXECUTION_TABLE_SPEC`'s worked example is fenced as well as shipping without its `## Execution Status` heading. The parser reads the first such heading in the file, so an agent that quoted the contract into its playbook handed the loop a table to execute instead of the real one — and the status writer then edited the quoted copy
+- Correction to the 0.1.0 entry below, left as written: the Bash blocklist has **18** entries, not 19. `BASH_BLOCKLIST` and the list in `docs/security.md` have always agreed with each other; only the count was wrong
+
+### Fixed
+
+- **The execution lap looped forever on a milestone the agent could not complete.** The only exit was a regex count of `pending` cells reaching zero, so a session that refused in prose and changed nothing was followed by another identical session, each one a paid SDK call, until someone hit Ctrl-C. The loop is now bounded three ways and hands the task to the operator instead
+- An unparseable status table no longer advances to `ai_qa` with nothing executed; the task goes to `error` naming the file and what was expected
+- A `blocked` row no longer skips work — it pauses
+- A playbook whose only unfinished rows are the operator's own merge and tag now completes into QA instead of spinning on them
+- A `pending` cell in the milestone summary table or in prose no longer keeps the loop alive; only the table under "Execution Status" is read
+- The pause block no longer blames an oversized milestone for an undeclared human step. The post-session repository snapshot was taken after the pipeline's own `commitAll`, which runs `git add .`, so any edit the agent made — including the Notes cell the playbook asks it to write — read as "the agent committed work but did not finish"
+- A gate settled on resume no longer leaves `resumed_at` in `state.yml`. The gate never runs, so the unspent one-session budget sat there until some later row was renumbered into it
+- A secret detected while committing a pause no longer strands the task. `state.yml` already says `need_operator` by then and `withErrorHandling` rethrows before `setError`, so the operator got a stack trace, a paused task and a dirty working tree. The scan is unchanged and nothing is committed; the pause stands and the terminal says how to recover
+- A ticked resume marker that `drive` cannot act on now says why. An unterminated code fence anywhere above the pause block hides it from the fence-aware reader, and resume failed in complete silence; a paused task whose playbook has gone missing is named too
+
 ## [0.3.0] - 2026-09-13
 
 ### Added

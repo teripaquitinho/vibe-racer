@@ -16,6 +16,8 @@ import {
   decisionPrompt,
 } from "../../src/claude/prompts.js";
 import type { TaskContext } from "../../src/pipeline/types.js";
+import { MILESTONE_STATUSES, OWNERS } from "../../src/pipeline/execute-table.js";
+import { OPERATOR_RESUME_MARKER } from "../../src/pipeline/operator-block.js";
 
 const CTX: TaskContext = {
   taskNumber: 42,
@@ -27,6 +29,8 @@ const CTX: TaskContext = {
   cwd: "/tmp/repo",
   contextFiles: ["README.md", "CLAUDE.md"],
 };
+
+const MILESTONE = { id: "M3", name: "Wire the parser" };
 
 describe("PERSONAS", () => {
   it("has three distinct persona strings", () => {
@@ -227,6 +231,91 @@ describe("planReviewPrompt", () => {
     expect(prompt).toContain("done");
   });
 
+  // The contract test (I1): the prompt is built FROM the unions, so a status or owner the
+  // handler knows is always one the planner is told about — `blocked` was the drift bug.
+  it("contract — every MILESTONE_STATUSES and OWNERS member appears in the prompt", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    for (const status of MILESTONE_STATUSES) expect(prompt).toContain(`\`${status}\``);
+    for (const owner of OWNERS) expect(prompt).toContain(`\`${owner}\``);
+  });
+
+  it("no longer contains the word blocked", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).not.toContain("blocked");
+  });
+
+  it("describes the Owner column, G<n> IDs and the gate categories", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).toContain("`Owner`");
+    expect(prompt).toContain("`G<n>`");
+    expect(prompt).toContain("## G<n> — <name>");
+    for (const category of [
+      "prerequisite PR",
+      "code review",
+      "credentials or secrets",
+      "external service or dashboard",
+      "visual or screenshot check",
+      "soak or wait period",
+      "anything outside the repository",
+    ]) {
+      expect(prompt).toContain(category);
+    }
+  });
+
+  it("requires the per-gate Verification line, with the operator's-word fallback", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).toContain("`**Verification:**` line");
+    expect(prompt).toContain("**Verification:** None — operator's word");
+  });
+
+  it("requires the Operator gates section above the sign-off checkbox, with an explicit none", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).toContain("## Operator gates in this plan");
+    expect(prompt).toContain("immediately above the `# Complete` checkbox");
+    expect(prompt).toContain("None — execution runs start to finish without you.");
+  });
+
+  it("runs continuously between operator gates, not without pausing", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).toContain("running continuously between operator gates");
+    expect(prompt).not.toContain("without pausing");
+  });
+
+  it("D11 — states the counter-rule in both placements", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    // Once in the File-2 structure list, once in the table rules.
+    expect(prompt).toContain("every gate row is followed by the agent milestone it unblocks");
+    expect(prompt).toContain("Every gate row must have at least one agent milestone after it");
+    expect(prompt).toContain("Merge, tag, release and deploy of this task's own work are not rows");
+    expect(prompt).toContain("Merging this task's PR, tagging, releasing and deploying are never rows");
+  });
+
+  it("D11 — does not invite a post-milestone or human-steps table", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).not.toMatch(/post-milestone/i);
+    expect(prompt).not.toMatch(/human steps/i);
+    expect(prompt).toContain("What happens *after* the last milestone is not in this plan at all");
+  });
+
+  it("interpolates EXECUTION_TABLE_SPEC verbatim, worked example included", () => {
+    const { prompt } = planReviewPrompt(CTX);
+    expect(prompt).toContain("### The milestone status table");
+    expect(prompt).toContain("| G1 | Operator merges PRs #12 and #14 |");
+  });
+
+  // A heading the agent can quote into `04_execute.md` outranks the real table there and takes
+  // the loop with it — `parseExecutionStatus` takes the FIRST match in the file.
+  it("carries no Execution Status heading the agent could copy into its playbook", () => {
+    const headingLine = /^#{1,6}\s+.*Execution Status/;
+    for (const [name, { prompt }] of [
+      ["planReviewPrompt", planReviewPrompt(CTX)],
+      ["executeMilestonePrompt", executeMilestonePrompt(CTX, MILESTONE)],
+    ] as const) {
+      const headings = prompt.split("\n").filter((line) => headingLine.test(line));
+      expect(headings, name).toEqual([]);
+    }
+  });
+
   it("uses softwareEngineer persona", () => {
     const { persona } = planReviewPrompt(CTX);
     expect(persona).toBe(PERSONAS.softwareEngineer);
@@ -268,27 +357,91 @@ describe("planReviewPrompt", () => {
 
 describe("executeMilestonePrompt", () => {
   it("references execution playbook and plan", () => {
-    const { prompt } = executeMilestonePrompt(CTX);
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
     expect(prompt).toContain("04_execute.md");
     expect(prompt).toContain("03_plan.md");
   });
 
   it("includes build and test verification", () => {
-    const { prompt } = executeMilestonePrompt(CTX);
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
     expect(prompt).toContain("npm run build");
     expect(prompt).toContain("npm run test");
   });
 
   it("includes product and design spec refs for non-trivial tasks", () => {
-    const { prompt } = executeMilestonePrompt({ ...CTX, trivial: false });
+    const { prompt } = executeMilestonePrompt({ ...CTX, trivial: false }, MILESTONE);
     expect(prompt).toContain("01_product.md");
     expect(prompt).toContain("02_design.md");
   });
 
   it("omits product and design spec refs for trivial tasks", () => {
-    const { prompt } = executeMilestonePrompt({ ...CTX, trivial: true });
+    const { prompt } = executeMilestonePrompt({ ...CTX, trivial: true }, MILESTONE);
     expect(prompt).not.toContain("01_product.md");
     expect(prompt).not.toContain("02_design.md");
+  });
+
+  it("contract — every MILESTONE_STATUSES and OWNERS member appears in the prompt", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    for (const status of MILESTONE_STATUSES) expect(prompt).toContain(`\`${status}\``);
+    for (const owner of OWNERS) expect(prompt).toContain(`\`${owner}\``);
+  });
+
+  it("names the milestone the handler chose instead of telling the agent to find one", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("**M3 — Wire the parser**");
+    expect(prompt).toContain("the milestone named in this prompt");
+    expect(prompt).toContain("Execute ONLY the milestone named above");
+    expect(prompt).not.toContain("Find the FIRST");
+    expect(prompt).not.toContain("first pending milestone");
+  });
+
+  it("falls back to the bare ID when the row has no name", () => {
+    const { prompt } = executeMilestonePrompt(CTX, { id: "M5a", name: "" });
+    expect(prompt).toContain("**M5a**");
+    expect(prompt).not.toContain("**M5a — ");
+  });
+
+  it("carries the needs_operator protocol", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("`needs_operator` protocol");
+    expect(prompt).toContain("do **not** attempt it");
+    expect(prompt).toContain("do **not** work around it");
+    expect(prompt).toContain("do **not** start a later milestone");
+    expect(prompt).toContain("End the session");
+  });
+
+  it("interpolates PAUSE_BLOCK_SPEC with its fenced example and the real resume marker", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("### The operator pause block");
+    expect(prompt).toContain("```markdown\n## Operator actions — pause 1 (G1)");
+    expect(prompt).toContain(`- [ ] ${OPERATOR_RESUME_MARKER}`);
+  });
+
+  it("states the no-push / no-PR / no-deploy rule", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("You never push, open PRs, merge PRs or deploy.");
+  });
+
+  it("D11 — says the lap ends at the last agent milestone and merge/tag come after QA", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("Execution ends at the last agent milestone.");
+    expect(prompt).toContain("Merging this task's PR, tagging and deploying happen after the QA lap");
+    expect(prompt).toContain("leave it exactly as it is — do not run it, do not mark it, do not `needs_operator` it");
+  });
+
+  it("describes gate verification with the fallback ladder", () => {
+    const { prompt } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(prompt).toContain("## Gate verification");
+    for (const cmd of ["`git fetch`", "`git log`", "`git merge-base`", "`gh pr view`"]) {
+      expect(prompt).toContain(cmd);
+    }
+    expect(prompt).toContain("fall back to local refs");
+    expect(prompt).toContain("**take the operator's tick as the answer** and say so in your session output");
+  });
+
+  it("uses softwareEngineer persona", () => {
+    const { persona } = executeMilestonePrompt(CTX, MILESTONE);
+    expect(persona).toBe(PERSONAS.softwareEngineer);
   });
 });
 
@@ -394,17 +547,35 @@ describe("chatPrompt", () => {
     const { systemPrompt } = chatPrompt(CTX, "need_decision");
     expect(systemPrompt).toContain(PERSONAS.releaseManager);
   });
+
+  it("AC18 — need_operator carries the pause role description and the softwareEngineer persona", () => {
+    const { systemPrompt } = chatPrompt(CTX, "need_operator");
+    expect(systemPrompt).toContain(PERSONAS.softwareEngineer);
+    expect(systemPrompt).toContain("The task is paused waiting on you.");
+    expect(systemPrompt).toContain("Read the last 'Operator actions' block in 04_execute.md.");
+    expect(systemPrompt).toContain("help reword or split the milestone");
+  });
+
+  it("AC18 — need_operator carries the resume-marker guardrail; other stages do not", () => {
+    const guardrail =
+      "Do not push, open PRs, merge or deploy, and do not tick the resume marker — that is the operator's.";
+    expect(chatPrompt(CTX, "need_operator").systemPrompt).toContain(guardrail);
+    expect(chatPrompt(CTX, "need_operator").systemPrompt).toContain("Do not tick completion checkboxes");
+    for (const stage of ["need_execution", "fine_tuning", "need_decision"] as const) {
+      expect(chatPrompt(CTX, stage).systemPrompt).not.toContain(guardrail);
+    }
+  });
 });
 
 describe("qaPrompt", () => {
   it("includes adversarial framing", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("YOUR JOB IS TO FIND PROBLEMS");
     expect(prompt).toMatch(/red\s+flag, not a success/);
   });
 
   it("includes all six mandatory sections", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("**What works**");
     expect(prompt).toContain("**What doesn't**");
     expect(prompt).toContain("**What regressed**");
@@ -414,50 +585,66 @@ describe("qaPrompt", () => {
   });
 
   it("includes git diff scoping instruction", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("git diff --stat main...HEAD");
     expect(prompt).toContain("git log --oneline main..HEAD");
   });
 
   it("references context files: objective, plan, execute", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("00_objective.md");
     expect(prompt).toContain("03_plan.md");
     expect(prompt).toContain("04_execute.md");
   });
 
   it("instructs to write 05_qa.md", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("05_qa.md");
   });
 
   it("uses qaEngineer persona", () => {
-    const { persona } = qaPrompt(CTX);
+    const { persona } = qaPrompt(CTX, []);
     expect(persona).toBe(PERSONAS.qaEngineer);
   });
 
   it("includes rule: do not fix issues", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("Do NOT fix any issues you find");
   });
 
   it("does not reference the deleted vibe-racer-fix.md handoff note", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).not.toContain("vibe-racer-fix.md");
   });
 
   it("forbids authoring the completion section", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("Do NOT add a \"# Complete\" section");
   });
 
   it("includes diff fallback clause", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("Fall back to reviewing every");
   });
 
+  it("AC19 — with no gates, omits the coverage requirement", () => {
+    const { prompt } = qaPrompt(CTX, []);
+    expect(prompt).not.toContain("Operator gates this task paused at");
+    expect(prompt).not.toContain("was not reviewed here");
+  });
+
+  it("AC19 — with gates, lists them and requires the report to open with its coverage", () => {
+    const { prompt } = qaPrompt(CTX, ["G1 — PRs merged into main", "G2 — Storybook check"]);
+    expect(prompt).toContain("## Operator gates this task paused at");
+    expect(prompt).toContain("- G1 — PRs merged into main");
+    expect(prompt).toContain("- G2 — Storybook check");
+    expect(prompt).toContain("Your\nreport MUST open with its coverage");
+    expect(prompt).toContain("This task paused at G1 (PRs merged into main). Work merged before that gate is outside");
+    expect(prompt).toContain("`git diff main...HEAD` and was not reviewed here.");
+  });
+
   it("scopes the review to code and defers doc freshness to the cleanup lap", () => {
-    const { prompt } = qaPrompt(CTX);
+    const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("BEFORE the cleanup lap");
     expect(prompt).toContain("do NOT report stale or missing project documentation");
     // The carve-out matters as much as the rule: a doc item the plan made an acceptance

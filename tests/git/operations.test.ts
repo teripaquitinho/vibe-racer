@@ -4,6 +4,7 @@ import {
   commitAll,
   getVibeRacerBranches,
   getRemoteUrl,
+  repoSnapshot,
 } from "../../src/git/operations.js";
 import type { SimpleGit } from "simple-git";
 
@@ -129,5 +130,52 @@ describe("getRemoteUrl", () => {
     } as Partial<SimpleGit>);
     const url = await getRemoteUrl(git);
     expect(url).toBeNull();
+  });
+});
+
+describe("repoSnapshot", () => {
+  function dirtyGit(overrides: Record<string, unknown> = {}) {
+    return mockGit({
+      revparse: vi.fn().mockResolvedValue("deadbee\n"),
+      status: vi.fn().mockResolvedValue({
+        not_added: ["src/new.ts", "plans/0005_x/state.yml"],
+        created: ["src/new.ts"],
+        modified: ["src/a.ts"],
+        deleted: ["src/gone.ts"],
+        renamed: [{ from: "src/old.ts", to: "src/moved.ts" }],
+        staged: ["src/a.ts", "plans/0005_x/04_execute.md"],
+      }),
+      ...overrides,
+    } as unknown as Partial<SimpleGit>);
+  }
+
+  it("returns HEAD and the sorted, de-duplicated dirty set", async () => {
+    const snapshot = await repoSnapshot(dirtyGit());
+    expect(snapshot.head).toBe("deadbee");
+    expect(snapshot.dirtyFiles).toEqual([
+      "plans/0005_x/04_execute.md",
+      "plans/0005_x/state.yml",
+      "src/a.ts",
+      "src/gone.ts",
+      "src/moved.ts",
+      "src/new.ts",
+    ]);
+  });
+
+  it("drops paths under the ignored prefix", async () => {
+    const snapshot = await repoSnapshot(dirtyGit(), "plans/0005_x");
+    expect(snapshot.dirtyFiles).toEqual([
+      "src/a.ts",
+      "src/gone.ts",
+      "src/moved.ts",
+      "src/new.ts",
+    ]);
+  });
+
+  it("reports an empty head on an unborn branch rather than throwing", async () => {
+    const git = dirtyGit({
+      revparse: vi.fn().mockRejectedValue(new Error("unknown revision HEAD")),
+    });
+    await expect(repoSnapshot(git)).resolves.toMatchObject({ head: "" });
   });
 });
