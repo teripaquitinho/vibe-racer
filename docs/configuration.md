@@ -23,6 +23,10 @@ context:
 skills:
   execute: ["simplify"]
   qa: ["security-review"]
+
+# Optional -- per-lap turn limits (overrides the handler defaults)
+max_turns:
+  qa: 150
 ```
 
 ### Fields
@@ -33,6 +37,7 @@ skills:
 | `plans_dir` | string | `"plans"` | Directory where task plan folders are created. Relative to project root. |
 | `context` | string[] | `["README.md", "CLAUDE.md"]` | Files loaded into Claude's context for every session. Use this to give the race engineer project-specific knowledge. |
 | `skills` | map of lap -> string[] (optional) | see below | Claude Code skills to make available on each lap. A lap present here replaces its default entirely. |
+| `max_turns` | map of lap -> positive integer (optional) | see below | Most turns a session on that lap may take before the SDK stops it. |
 
 ### Context Files
 
@@ -146,3 +151,18 @@ vibe-racer/0002_fix-login-bug
 ```
 
 Commits are made automatically after each lap. vibe-racer never pushes to remote -- you control when to push and create PRs.
+
+## Turn limits
+
+Every tool call a session makes uses one turn. A lap with a limit is stopped when it runs out.
+The defaults are `qa: 100` and `decision: 30`. Other laps have no limit. Lap names are the
+same as in the Skills table above.
+
+```yaml
+max_turns:
+  qa: 150
+```
+
+Raise `qa` for a task with a big diff. A QA session that hits its limit keeps the partial
+`05_qa.md` with an "incomplete" banner at the top and still advances. It fails only if it
+ran out before writing the report at all.

@@ -47,11 +47,13 @@ export async function runAndStream(options: SessionOptions): Promise<string> {
       ? undefined
       : options.lap ?? (options.stage ? LAP_BY_STAGE[options.stage] : undefined);
 
-  // Resolve skills for this lap
+  // Resolve skills and the turn budget for this lap
   let skillsSection = "";
   let skillsRequested = false;
+  let maxTurns = options.maxTurns;
   if (lap) {
     const config = loadConfig(options.cwd);
+    maxTurns = config.max_turns?.[lap] ?? maxTurns;
     const requested = resolveSkills(lap, config);
     if (requested.length > 0) {
       skillsRequested = true;
@@ -104,7 +106,7 @@ export async function runAndStream(options: SessionOptions): Promise<string> {
       },
       settingSources: ["project", "user"],
       allowedTools: effectiveTools,
-      maxTurns: options.maxTurns,
+      maxTurns,
       includePartialMessages: true,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,

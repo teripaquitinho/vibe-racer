@@ -777,7 +777,7 @@ agreeable. The team depends on you to catch what the engineer missed.
 Before you assess anything, establish what this task actually changed:
   git diff --stat main...HEAD
   git log --oneline main..HEAD
-Read the diff. Your review is scoped to these changes plus anything they could break.
+Your review is scoped to these changes plus anything they could break.
 Do not review code this task did not touch, except to check for regressions.
 
 If that diff is empty or the command fails (no main branch, shallow clone, detached
@@ -824,6 +824,33 @@ You MUST produce ALL of the following sections. No section may be omitted.
 5. **Risks and known limitations** — Will feed into the decision checklist.
 6. **Verification run** — Run: build, lint, tests. Paste full output.
    Do NOT summarize. Do NOT say "all tests pass" — paste the output.
+
+## How to work: you have a hard turn limit
+Every tool call spends a turn, and the session is cut off without warning when they run out.
+A report that exists only in your head when that happens is lost. Work in this order:
+
+1. **Triage (first 3–4 turns).** Read the plan files and \`git diff --stat main...HEAD\`.
+   Rank the changed areas by risk: auth, sessions and security boundaries, data and schema
+   changes, error handling, concurrency, build/CI/deploy config, and anything the plan
+   calls tricky. Mechanical churn (renames, generated files, fixtures, lockfiles) is last.
+2. **Write \`${ctx.planPath}/05_qa.md\` now, before reviewing anything.** Put all six section
+   headings in it, plus a short "Scope" list of the areas you ranked, in order. Leave the
+   sections empty and fill them in as you go.
+3. **Verify once.** Run build, lint and the full test suite in ONE foreground Bash call
+   (chain them with \`;\` so one failure doesn't hide the rest). Paste the output into
+   "Verification run" and "What regressed" straight away. Do not run anything in the
+   background and do not poll. Do not re-run gates just to double-check them.
+4. **Review by risk, highest first.** Read the diff for a file (\`git diff main...HEAD -- <path>\`)
+   rather than the whole file, and open more than the diff only when it doesn't make sense
+   on its own. Batch small reads into one Bash call.
+5. **Write as you go.** When a finding is confirmed, or a criterion is checked, add it to
+   05_qa.md right away. Don't save all your findings for one final write.
+
+Stay on the diff. No side trips into \`node_modules\`, throwaway scripts, or starting servers
+or browsers. The exception is a specific finding that can't be confirmed any other way; then
+say in the finding why the proof needed it. If you run short of turns, a report that covers
+the highest-risk areas well is worth more than one that touches everything. Say under
+"Scope" which areas you didn't reach.
 
 ## Rules
 - Every claim (positive or negative) MUST include the command run and output.

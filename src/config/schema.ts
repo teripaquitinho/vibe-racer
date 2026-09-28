@@ -10,6 +10,7 @@ export const configSchema = z.object({
     .array(z.string())
     .default(["README.md", "CLAUDE.md"]),
   skills: z.record(z.string(), z.array(z.string())).optional(),
+  max_turns: z.record(z.string(), z.number().int().positive()).optional(),
 });
 
 export type VibeRacerConfig = z.infer<typeof configSchema>;

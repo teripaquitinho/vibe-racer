@@ -18,8 +18,13 @@ vi.mock("../../src/utils/logger.js", () => ({
   },
 }));
 
+const mockConfig = vi.fn(() => ({
+  plans_dir: "plans",
+  context: ["README.md", "CLAUDE.md"],
+} as Record<string, unknown>));
+
 vi.mock("../../src/config/loader.js", () => ({
-  loadConfig: () => ({ plans_dir: "plans", context: ["README.md", "CLAUDE.md"] }),
+  loadConfig: () => mockConfig(),
   findProjectRoot: () => "/tmp/repo",
 }));
 
@@ -236,5 +241,33 @@ describe("runAndStream", () => {
       ([arg]: [unknown]) => typeof arg === "string" && arg !== "",
     );
     expect(textWrites).toHaveLength(0);
+  });
+
+  describe("max_turns from config", () => {
+    async function* fakeStream() {
+      yield { type: "result" as const, result: "done", num_turns: 1, total_cost_usd: 0.01 };
+    }
+
+    it("overrides the handler's maxTurns for the stage's lap", async () => {
+      mockConfig.mockReturnValueOnce({ plans_dir: "plans", context: [], skills: { qa: [] }, max_turns: { qa: 150 } });
+      mockQuery.mockReturnValue(fakeStream());
+
+      const { runAndStream } = await import("../../src/claude/session.js");
+      await runAndStream({ ...baseOptions, stage: "ai_qa", taskPlanPath: "plans/0001_task", plansDir: "plans", maxTurns: 100 });
+
+      const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1];
+      expect(lastCall[0].options.maxTurns).toBe(150);
+    });
+
+    it("keeps the handler's maxTurns when the lap has no override", async () => {
+      mockConfig.mockReturnValueOnce({ plans_dir: "plans", context: [], skills: { qa: [] }, max_turns: { execute: 5 } });
+      mockQuery.mockReturnValue(fakeStream());
+
+      const { runAndStream } = await import("../../src/claude/session.js");
+      await runAndStream({ ...baseOptions, stage: "ai_qa", taskPlanPath: "plans/0001_task", plansDir: "plans", maxTurns: 100 });
+
+      const lastCall = mockQuery.mock.calls[mockQuery.mock.calls.length - 1];
+      expect(lastCall[0].options.maxTurns).toBe(100);
+    });
   });
 });

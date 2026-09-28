@@ -8,6 +8,7 @@ const mockExistsSync = vi.fn();
 const mockEnsureCompletionSection = vi.fn().mockReturnValue(true);
 const mockQaPrompt = vi.fn().mockReturnValue({ prompt: "qa test prompt", persona: "qa test persona" });
 const mockReadFile = vi.fn();
+const mockWriteFile = vi.fn().mockResolvedValue(undefined);
 const mockWarn = vi.fn();
 
 vi.mock("../../../src/claude/session.js", () => ({
@@ -20,6 +21,7 @@ vi.mock("../../../src/claude/prompts.js", () => ({
 
 vi.mock("fs/promises", () => ({
   readFile: (...args: unknown[]) => mockReadFile(...args),
+  writeFile: (...args: unknown[]) => mockWriteFile(...args),
 }));
 
 vi.mock("../../../src/git/operations.js", () => ({
@@ -91,6 +93,7 @@ describe("handleQa", () => {
     // `clearAllMocks` keeps implementations but a prior test may have overridden them.
     mockQaPrompt.mockReturnValue({ prompt: "qa test prompt", persona: "qa test persona" });
     mockReadFile.mockResolvedValue(PLAYBOOK_NO_OWNER);
+    mockRunAndStream.mockResolvedValue(undefined);
   });
 
   it("AC19 — passes the operator gates from 04_execute.md to qaPrompt as `G<n> — <name>`", async () => {
@@ -207,5 +210,60 @@ describe("handleQa", () => {
       expect.stringContaining("QA review"),
       expect.anything(),
     );
+  });
+
+  describe("turn limit", () => {
+    const TURN_LIMIT = new Error(
+      "Claude Code returned an error result: Reached maximum number of turns (100)",
+    );
+
+    it("passes a default maxTurns of 100", async () => {
+      mockExistsSync.mockReturnValue(true);
+
+      const { handleQa } = await import("../../../src/pipeline/handlers/qa.js");
+      await handleQa(CTX);
+
+      expect(mockRunAndStream).toHaveBeenCalledWith(expect.objectContaining({ maxTurns: 100 }));
+    });
+
+    it("keeps a partial 05_qa.md, flags it incomplete, and advances", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRunAndStream.mockRejectedValue(TURN_LIMIT);
+      mockReadFile.mockImplementation(async (p: string) =>
+        p.endsWith("05_qa.md") ? "# QA\n\n## What works\n" : PLAYBOOK_NO_OWNER,
+      );
+
+      const { handleQa, INCOMPLETE_BANNER } = await import("../../../src/pipeline/handlers/qa.js");
+      await expect(handleQa(CTX)).resolves.toBeUndefined();
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        "/tmp/repo/plans/0004_add-qa-step/05_qa.md",
+        `${INCOMPLETE_BANNER}\n\n# QA\n\n## What works\n`,
+      );
+      expect(mockWarn).toHaveBeenCalledWith(expect.stringContaining("turn limit"));
+      expect(mockUpdateStage).toHaveBeenCalledWith("plans/0004_add-qa-step", "fine_tuning");
+    });
+
+    it("still fails when the limit is hit before 05_qa.md exists", async () => {
+      mockExistsSync.mockReturnValue(false);
+      mockRunAndStream.mockRejectedValue(TURN_LIMIT);
+
+      const { handleQa } = await import("../../../src/pipeline/handlers/qa.js");
+      await expect(handleQa(CTX)).rejects.toThrow("maximum number of turns");
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockUpdateStage).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other session error even when 05_qa.md exists", async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockRunAndStream.mockRejectedValue(new Error("network down"));
+
+      const { handleQa } = await import("../../../src/pipeline/handlers/qa.js");
+      await expect(handleQa(CTX)).rejects.toThrow("network down");
+
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockUpdateStage).not.toHaveBeenCalled();
+    });
   });
 });
