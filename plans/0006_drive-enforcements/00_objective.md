@@ -187,4 +187,4 @@ branch whatever branch was checked out beforehand; the two policy decisions are 
 
 # Complete
 
-- [ ] Ready to advance to Objective Review
+- [x] Ready to advance to Objective Review
