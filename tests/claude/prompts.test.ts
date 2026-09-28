@@ -622,6 +622,20 @@ describe("qaPrompt", () => {
     expect(prompt).toContain("Do NOT add a \"# Complete\" section");
   });
 
+  it("makes the report exist early and grow, so a turn limit cannot wipe it out", () => {
+    const { prompt } = qaPrompt(CTX, []);
+    expect(prompt).toContain("hard turn limit");
+    expect(prompt).toContain(`Write \`${CTX.planPath}/05_qa.md\` now, before reviewing anything`);
+    expect(prompt).toContain("Write as you go");
+  });
+
+  it("forbids background runs, polling and side trips", () => {
+    const { prompt } = qaPrompt(CTX, []);
+    expect(prompt).toContain("ONE foreground Bash call");
+    expect(prompt).toContain("do not poll");
+    expect(prompt).toContain("No side trips into `node_modules`");
+  });
+
   it("includes diff fallback clause", () => {
     const { prompt } = qaPrompt(CTX, []);
     expect(prompt).toContain("Fall back to reviewing every");

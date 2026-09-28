@@ -114,6 +114,8 @@ Execution does not hand straight to cleanup. The race engineer re-reads the task
 
 The QA session judges, it does not fix. It is write-jailed to the plan folder and cannot touch source.
 
+**It works inside a turn limit.** The default is 100 turns; set `max_turns.qa` in `.vibe-racer.yml` to change it. The session ranks the diff by risk, writes `05_qa.md` with every section heading before it reviews anything, runs build, lint and tests once, and adds findings as they are confirmed. When the limit hits, the review is cut short but not lost: the handler puts an "incomplete" banner at the top of the report and the lap advances as usual.
+
 **Its subject is the code.** QA runs *before* the cleanup lap, so project documentation is expected to be stale at this point — reporting it would be reporting work that is scheduled rather than missed. The exception is documentation the plan made a deliverable: an acceptance criterion or a milestone task. Those are execution scope, and QA names the criterion when it reports one.
 
 **Output:** QA report.

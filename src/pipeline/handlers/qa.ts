@@ -1,6 +1,6 @@
 import path from "path";
 import { existsSync } from "node:fs";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import type { TaskContext } from "../types.js";
 import { runAndStream } from "../../claude/session.js";
 import { qaPrompt } from "../../claude/prompts.js";
@@ -15,7 +15,16 @@ import {
 import { log } from "../../utils/logger.js";
 
 const ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Write", "Bash"];
-const MAX_TURNS = 60;
+/** Default only — `max_turns.qa` in .vibe-racer.yml overrides it (resolved in runAndStream). */
+const MAX_TURNS = 100;
+
+/** How the SDK words a session that ran out of turns. */
+const TURN_LIMIT_ERROR = /maximum number of turns/i;
+
+export const INCOMPLETE_BANNER =
+  "> **QA stopped at its turn limit — this report is incomplete.** Sections below may be " +
+  "partial or empty. Re-run the lap (`stage: ai_qa` in state.yml, then `drive`) or raise " +
+  "`max_turns.qa` in .vibe-racer.yml if the gaps matter.";
 
 /**
  * The operator gates execution passed through, as `G<n> — <name>`, so the QA report can state
@@ -40,21 +49,33 @@ export async function handleQa(ctx: TaskContext): Promise<void> {
   const gates = await gatesPassed(ctx);
   const { prompt, persona } = qaPrompt(ctx, gates);
 
-  await runAndStream({
-    prompt,
-    persona,
-    cwd: ctx.cwd,
-    allowedTools: ALLOWED_TOOLS,
-    stage: "ai_qa",
-    taskPlanPath: ctx.planPath,
-    plansDir: ctx.plansDir,
-    maxTurns: MAX_TURNS,
-  });
+  const qaPath = path.join(ctx.cwd, ctx.planPath, "05_qa.md");
+
+  try {
+    await runAndStream({
+      prompt,
+      persona,
+      cwd: ctx.cwd,
+      allowedTools: ALLOWED_TOOLS,
+      stage: "ai_qa",
+      taskPlanPath: ctx.planPath,
+      plansDir: ctx.plansDir,
+      maxTurns: MAX_TURNS,
+    });
+  } catch (err) {
+    // The prompt makes the session write 05_qa.md early and grow it, so a turn limit cuts
+    // the review short rather than wiping it out. A partial report goes to the operator,
+    // flagged; any other failure, or a limit hit before anything was written, still fails.
+    const message = err instanceof Error ? err.message : String(err);
+    if (!TURN_LIMIT_ERROR.test(message) || !existsSync(qaPath)) throw err;
+    log.warn(`QA hit its turn limit — keeping the partial 05_qa.md: ${message}`);
+    const partial = await readFile(qaPath, "utf-8");
+    await writeFile(qaPath, `${INCOMPLETE_BANNER}\n\n${partial}`);
+  }
 
   // Verify 05_qa.md was written before advancing. Advancing without it strands the task:
   // fine_tuning points at 05_qa.md, tryAdvance returns no_questions_file, and there is no
   // forward path.
-  const qaPath = path.join(ctx.cwd, ctx.planPath, "05_qa.md");
   if (!existsSync(qaPath)) {
     throw new Error("QA session did not produce 05_qa.md");
   }
