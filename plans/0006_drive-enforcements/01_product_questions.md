@@ -61,6 +61,10 @@ No override, on either guardrail. Rewording is the only road, and that is the fe
   will state "vibe-racer cannot push" as a property, and a property with a config flag is a
   default, not a property. Anyone who needs vibe-racer to push does not want vibe-racer.
 
+  > **Amended 2026-10-10.** The documents will not say "vibe-racer cannot push". `gh` stays
+  > usable, so what they state is the rule — five denied commands — with `gh api` and nested
+  > shells as residual limitations (`01_product.md` §5.4). No override still holds.
+
 The operator's actual escape hatch for both already exists and stays: they do the thing
 themselves, on their own terminal, with their own credentials. The constraint is on the agent, not
 on them. Consequence to honour in the design lap: because there is no override, the refusal and
@@ -94,6 +98,10 @@ identifier (`vibe-racer/0004_…`, `#12`), plan review may run the read-only che
 allows (`gh pr view`, `git merge-base`) to state that dependency's *current* status in the
 question — "PR #12 is still open" — so the operator decides with a fact rather than a memory. It
 never goes looking for dependencies the plan did not name.
+
+> **Amended 2026-10-10.** Plan review cannot run these checks itself — a review lap has no Bash,
+> and the guard denies it. The handler runs them before the session and passes the status in the
+> prompt, and an identifier is `PR #12`, not a bare `#12` (`01_product.md` §4.3).
 
 ## `drive` on the task branch — the operator's terminal
 
@@ -242,6 +250,10 @@ softened before release, not after.
 npm `vibe-racer@0.3.0` has the same wiring, and its README, `SECURITY.md` and docs state that the
 guard runs on every tool call. Milestones 1–3 still have the design, plan and execution laps ahead of
 them. Does the fix wait for them?
+
+> **Withdrawn 2026-10-10.** Shipping one milestone ahead of the rest needs a mid-cycle merge,
+> which this task forbids. The guard fix is now a prerequisite task of its own
+> (`00_objective.md`, *Prerequisite*); the disclosure points below travel with it.
 
 **Answer:**
 No. Milestone 0 ships alone as a patch release as soon as it passes its acceptance, ahead of

@@ -3,8 +3,10 @@
 > **Role**: Senior Product Designer
 > **Stage**: `ai_product_review` → `need_design`
 > **Date**: 2026-10-10
-> **Sources**: `00_objective.md` (milestones 0–3, decisions already made) and
+> **Sources**: `00_objective.md` (milestones 1–3, decisions already made) and
 > `01_product_questions.md` (Q1–Q9, answered). Every decision below cites the Q&A it comes from.
+> **Revised 2026-10-10** after the operator's review: the guard fix (formerly Milestone 0, Q7–Q9)
+> is now a prerequisite task of its own, and §4.4's verification-verb rule is stated once.
 
 ---
 
@@ -12,7 +14,7 @@
 
 1. [Product Overview](#1-product-overview)
 2. [The Principle, Stated Once](#2-the-principle-stated-once)
-3. [Milestone 0 — Enforcement That Actually Runs](#3-milestone-0--enforcement-that-actually-runs)
+3. [Prerequisite — Enforcement That Actually Runs](#3-prerequisite--enforcement-that-actually-runs)
 4. [Milestone 1 — Plans Never Ask For A Merge](#4-milestone-1--plans-never-ask-for-a-merge)
 5. [Milestone 2 — The Guard Enforces The No-Push Rule](#5-milestone-2--the-guard-enforces-the-no-push-rule)
 6. [Milestone 3 — `drive` Operates On The Task Branch](#6-milestone-3--drive-operates-on-the-task-branch)
@@ -29,31 +31,25 @@
 
 ### 1.1 What this task is
 
-Four changes that make one sentence true: **git belongs to the operator, and a task's cycle
+Three changes that make one sentence true: **git belongs to the operator, and a task's cycle
 belongs to its branch.**
 
 | # | Milestone | What the operator gets |
 |---|---|---|
-| **0** | Enforcement that actually runs | The security guard the product has advertised since 0.1.0 is consulted on every tool call for the first time |
 | **1** | Plans never ask for a merge | No plan can send them to `main` mid-execution to merge unreviewed work |
-| **2** | The guard enforces the no-push rule | "vibe-racer never pushes" becomes a property of the binary, not a sentence in a prompt |
+| **2** | The guard enforces the no-push rule | `git push`, `gh pr create`, `gh pr merge`, `gh release` and `gh workflow run` are denied by the guard, not just discouraged by a prompt |
 | **3** | `drive` operates on the task branch | `drive` works from any branch; a paused task is never invisible |
 
-### 1.2 Why Milestone 0 exists and why it is first
+### 1.2 What this task stands on
 
-Found 2026-10-10: `runAndStream` passes the guard as `canUseTool` while starting every session in
-`permissionMode: "bypassPermissions"`, where the SDK auto-approves every tool call **before** the
-callback is consulted. The SDK says so on every session
-(`CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`) and the warning scrolled past. `allowedTools` is an
-auto-approve list, not a filter, so the per-lap tool list did not restrict either.
+Found 2026-10-10: the tool guard is passed as `canUseTool` while every session runs in
+`permissionMode: "bypassPermissions"`, where the installed SDK does not consult it, and
+`allowedTools` does not restrict. Milestone 2 adds a rule to that guard, so nothing it promises is
+true until the guard runs.
 
-Consequence: neither security layer has ever been enforced in a real session. A review lap
-documented as "Read, Glob, Grep, Write, path-jailed to the plan folder" in fact had Bash, Edit and
-everything else, in the operator's whole repository, kept to one file by its prompt alone. This
-affects published `vibe-racer@0.3.0`, not just this checkout.
-
-Everything milestones 1–3 promise about the guard is inert until this lands. Hence the order:
-**0, then 1, then 2, then 3** (objective, *Decisions already made*).
+Making it run is **not part of this task**. It is a prerequisite task of its own that races,
+merges and is released first (§3). The order here is **1, then 2, then 3** (objective, *Decisions
+already made*).
 
 ### 1.3 Who this is for
 
@@ -68,7 +64,7 @@ unattended while a lap runs. Three things they care about here:
 ### 1.4 Product posture: guardrails have no switches
 
 Both new guardrails — the sign-off refusal and the Bash deny list — are absolute. No `--force`, no
-`allow:` key in `.vibe-racer.yml`, no magic comment, no `--unguarded` (Q2, Q7).
+`allow:` key in `.vibe-racer.yml`, no magic comment (Q2).
 
 > A property with a config flag is a default, not a property. Anyone who needs vibe-racer to push
 > does not want vibe-racer. (Q2)
@@ -110,90 +106,31 @@ not answered**, and the coverage statement the QA prompt prints today is removed
 
 ---
 
-## 3. Milestone 0 — Enforcement That Actually Runs
+## 3. Prerequisite — Enforcement That Actually Runs
 
-### 3.1 Layer 2 moves to where the SDK looks
+*(formerly Milestone 0 of this task; its sections 3.1–3.6, the answers to Q7–Q9, AC0 and the
+guarded-startup workflow have moved with it)*
 
-The decision function in `src/claude/guard.ts` is unchanged in substance — same rules, same
-messages, same audit entries — and is registered as a **`PreToolUse` hook**, which the SDK consults
-under `bypassPermissions` (probed; objective, *Decisions already made*). Every tool call of every
-guarded session goes through it, **including tools that are not in the lap's list**.
+This is a **separate task**, raced and merged before this one executes. It was written here as a
+milestone that "ships alone as a patch release", and that cannot be done from inside this task:
 
-Rules that start running for the first time, unchanged: Rule 0 (`state.yml` is pipeline-owned), the
-sensitive-path blocklist, path containment, `.env` protection, the plan-folder jail at review
-stages, the review-stage Bash block, and `BASH_BLOCKLIST` (18 commands plus interpreter-aware
-network detection).
+- The task has one branch and one cycle, and QA runs after all milestones. Releasing the guard fix
+  ahead of the rest needs a merge mid-cycle — what Milestone 1 forbids.
+- `main` already carries #5's unreleased work, so a release cut from `main` is not a patch of
+  0.3.0 in any case.
 
-### 3.2 Layer 1 becomes a restriction, not a hint
+It is the dependency §2 describes, answered with **Sequence**.
 
-A tool outside the lap's list is **denied**, not merely unlisted. `Skill` keeps its existing
-allowance when a lap resolves skills. *The mechanism* — removing the tool from the model's context,
-a default-deny branch in the hook, or both — is the design lap's call (objective; design Q2).
+**What this task requires of it** — checked at the top of the plan lap, not assumed:
 
-### 3.3 `drive` refuses to start a lap it cannot guard (Q7)
-
-**The failure that just happened is the general case**: an SDK change moves what is consulted, the
-guard is silently skipped, and the log still prints `Guard: path-jail…`. The product answer is a
-hard stop, not a warning.
-
-```
-Refusing to start the product-review lap: the tool guard is not enforced by this SDK version
-(CLAUDE_SDK_CAN_USE_TOOL_SHADOWED). No session was started and nothing was spent.
-```
-
-Three rules:
-
-- **The SDK's shadow warning is promoted from log noise to a hard stop.** It was the one signal
-  that told the truth here, and it scrolled past.
-- **The `Guard:` line is printed only when the enforcement it describes is installed.** Otherwise
-  the line is the refusal above. Same for `init`, whose wording no longer names `canUseTool`.
-- **No `--unguarded` flag** (Q2 reasoning). The operator who wants an unguarded session already
-  has one: `radio`, which says so.
-
-"Nothing was spent" is part of the message on purpose — the operator's first question about any
-refusal mid-pipeline is whether it cost them a lap.
-
-### 3.4 No warn-only period (Q8)
-
-The rules in `guard.ts` were unit-tested but never exercised by a live session. Once they run,
-laps that have quietly been doing forbidden things start being denied mid-session. We do **not**
-soften that with a warn-only mode:
-
-- A warn-only guard *is* today's behaviour with extra log lines, and it would ship a second
-  release whose documents promise enforcement that is not there.
-- **The landing is softened before release, not after.** Each lap is run once for real against a
-  throwaway task with the guard live, and the audit log is read. Every denial is either **correct**
-  (the lap's prompt is fixed to stop asking for it) or a **wrong rule** (fixed as its own recorded
-  decision, per the objective's "guardrails only tighten" constraint). This dry run is an
-  **acceptance item** for Milestone 0, not a nice-to-have.
-- **A lap that dies from a denial says so.** The operator sees the denial — tool, rule, path or
-  command — in the session log and in `.vibe-racer/audit.log`. Never just "session ended".
-
-### 3.5 Release and disclosure (Q9)
-
-Milestone 0 **ships alone as a patch release** as soon as it passes its acceptance, ahead of
-milestones 1–3.
-
-| Surface | What it says |
+| Requirement | Used by |
 |---|---|
-| **CHANGELOG — Security** | 0.3.0 passed the guard as `canUseTool` while running sessions in `bypassPermissions`, where the SDK does not call it; the path jail, the review-stage Bash block, the command blocklist and the per-lap tool list were not enforced. Upgrade. |
-| **`SECURITY.md`, `docs/security.md`** | Describe the hook mechanism, and carry **one dated line** recording that versions up to and including 0.3.0 did not enforce the guard. Not a footnote — an operator who raced a repository they do not control on 0.3.0 needs to know the agent had full permissions there. |
-| **npm 0.3.0** | Deprecated with a one-line message pointing at the patch release, so `npm install` says it before the README does. |
-| **Until the patch is out** | Anyone trying vibe-racer is told in words: treat a `drive` session as an unrestricted agent in the repo, and use the Docker recommendation. |
-| **`docs/how-it-works.md`, `CLAUDE.md`, README** | Name the mechanism actually used. No surface may describe `canUseTool` as the enforcement point after this milestone. |
+| The guard's rules run from a `PreToolUse` hook on every tool call under `bypassPermissions` | §5.1 — the deny list is a rule in that guard |
+| Denials are written to `.vibe-racer/audit.log` | AC2.1 |
+| A tool outside the lap's list is denied | §4.3 — plan review has no Bash, which is why the handler, not the agent, checks a named dependency's status |
 
-### 3.6 A test that would have caught it
-
-`tests/claude/session.test.ts` mocks `query`, pulls `canUseTool` out of the options and invokes it
-by hand — which proves the callback is *passed*, not that anything *calls* it. Milestone 0 adds, at
-minimum:
-
-- an assertion that the guard is registered under `hooks.PreToolUse` in the options `query`
-  receives, failing if it is passed only as `canUseTool`;
-- an assertion that a tool outside the lap's list is denied;
-- treatment of `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` as a **test failure**, not log noise;
-- a live-SDK check like the objective's three probes **if it can run without a paid session in
-  CI**; if not, a documented manual check in the release steps.
+If any of the three does not hold on `main` when this task reaches `need_plan`, that is a plan
+question, not something to fix in passing here.
 
 ---
 
@@ -235,15 +172,35 @@ legitimate answers, so the operator decides at `need_plan`.
 > forever). Noise at a pit stop is expensive — pit stops are where the operator's attention is
 > spent, and a question they learn to skim is a question that stops working. (Q3)
 
-**One narrow exception, because it is free and specific (Q3):** if the plan text names a branch or
-PR *by identifier* (`vibe-racer/0004_…`, `#12`), plan review may run the read-only checks the guard
-already allows (`gh pr view`, `git merge-base`) to state that dependency's **current status** in
-the question — "PR #12 is still open" — so the operator decides with a fact rather than a memory.
-It never goes looking for dependencies the plan did not name.
+**One narrow exception, because it is free and specific (Q3):** if the task's documents name a
+branch or PR *by identifier* (`vibe-racer/0004_…`, `PR #12` — a bare `#12` is not enough, since
+`#N` also names tasks and issues), the question states that dependency's
+**current status** — "PR #12 is still open" — so the operator decides with a fact rather than a
+memory. Nothing goes looking for dependencies the documents did not name.
 
-The plan lap also runs the forbidden-verb list (§4.4) over its **own** output before finishing, so
-the common case is caught before the operator ever sees it. The sign-off refusal is the backstop,
-not the first line of defence.
+**The handler runs that check, not the agent (operator decision, 2026-10-10).** Q3 was written as
+"plan review may run the read-only checks the guard already allows", and it cannot: a review lap
+has `Read, Glob, Grep, Write` and the guard denies Bash at all four review stages. It only looked
+possible while the guard was not running. Granting Bash to plan review would loosen a rule, which
+the standing constraint forbids. So before the session starts, the plan-review handler collects the
+identifiers named in the task's documents, runs the read-only checks itself (`gh pr view`,
+`git merge-base`), and hands the session a short status list in its prompt. The session never
+touches the remote.
+
+- If a check cannot run (no `gh`, no network, not a PR, no answer within a few seconds), the
+  status is "unknown" and says why. A failed or slow check never fails or stalls the lap.
+- `gh pr view` is a network call `drive` makes outside a session. That is accepted and said here
+  rather than discovered: it is read-only, bounded by a timeout, and skipped when `gh` is absent.
+- The check reads the documents that exist **before** the session. A dependency the session names
+  for the first time in the plan it is writing gets a question without a status attached.
+- Only **state** reaches the prompt — open, merged, closed, ancestor of `main` or not. PR titles
+  and bodies are someone else's text and stay out of it.
+
+**The handler also runs the forbidden-verb check (§4.4) over the plan lap's output**, after the
+session ends — the session cannot run code, so "the plan lap checks its own output" could only
+ever have been a sentence in a prompt. A hit is printed as a warning naming the row and the
+reword, at the moment the operator is about to read the plan; it does not fail the lap. The
+sign-off refusal (§4.5) stays the thing that blocks.
 
 ### 4.4 The forbidden-verb list — broad, with a cheap reword (Q1)
 
@@ -253,9 +210,30 @@ Optimised for **zero escapes**, not zero friction.
 `release`, `deploy`, `publish`, plus the command forms `git push`, `gh pr create`, `gh pr merge`,
 `gh release`, `gh workflow run`.
 
-All of them refuse, **including read-only phrasings**. A gate that wants to *verify* a tag or a
-closed PR must say so with a **verification verb** — `confirm`, `check`, `verify`, `inspect` — and
-that phrasing is what the prompt teaches.
+**One exemption, and it is positional.** A gate may *verify* state — a tag that exists, a PR that
+is closed — if it says so with a **verification verb**: `confirm`, `check`, `verify`, `inspect`.
+The rule, stated once and tested as stated (AC1.4):
+
+- A line is read clause by clause (split on `,` `;` `→`, a spaced ` / `, `then`, `and`; a `/`
+  inside a path or ref is not a separator).
+- A clause containing a forbidden verb passes **only if the clause begins with a verification
+  verb**. A verification verb elsewhere on the line exempts nothing:
+  `Confirm the build, then merge PR #12` is refused.
+- A clause containing a **command form** (`git push`, `gh pr merge`, …) is never exempt.
+
+Everything else refuses, including phrasings the author meant innocently (`Tag the screenshot with
+the build number`). That is the false positive this list accepts.
+
+Verbs match **whole words and their inflections, never substrings**: `tag` and `tagged` match,
+`staging`, `stage` and `package` do not. The read-only commands gate verification uses —
+`git merge-base`, `git fetch`, `gh pr view`, `gh pr list` — are not verb matches either:
+`git merge-base --is-ancestor …` in a checklist item is a verification command, not a merge.
+
+**What the exemption does not make acceptable.** `Verify PR #12 is merged` passes the check, and
+as a gate it is still a dependency on unmerged work: at the pause the operator goes and merges. A
+keyword check cannot tell state that already holds from state someone is waiting for. That case
+belongs to the plan-review dependency question (§4.3), and the refusal message must not teach it
+(§4.5).
 
 > Rationale: the cost of a false positive is one reword by whoever wrote the row, and the message
 > tells them the reword. The cost of an escape is a paid execute lap that sends the operator to
@@ -287,8 +265,12 @@ write instead.
 G1 | Merge PR #12 | operator  asks for a merge. A task's cycle ends at `done`; the merge is
 yours to do afterwards. If this task *needs* #12's work, that is a dependency — sequence this
 task after it, or base this branch on it — and it belongs in `03_plan_questions.md`, not in the
-playbook. If you only need to *check* #12's state, reword the row to "Confirm PR #12 is merged".
+playbook. A gate may still check state that already exists if the row begins with a verification
+verb, e.g. "Confirm tag v0.3.0 exists on the remote".
 ```
+
+The hint's example is deliberately **not** the refused PR. Offering "Confirm PR #12 is merged"
+would hand back the same dependency in a phrasing the check accepts (§4.4).
 
 Three properties:
 
@@ -319,14 +301,14 @@ not depend on the table parse and still runs.
 
 ## 5. Milestone 2 — The Guard Enforces The No-Push Rule
 
-*(formerly `0006_guard-enforces-the-no-push-rule`, unchanged in substance. Depends on Milestone 0:
-a deny list added to a guard that is never called denies nothing.)*
+*(formerly `0006_guard-enforces-the-no-push-rule`, unchanged in substance. Depends on the
+prerequisite task (§3): a deny list added to a guard that is never called denies nothing.)*
 
 ### 5.1 The deny list
 
 At `ready_to_execute`, Bash denies at minimum: `git push`, `gh pr create`, `gh pr merge`,
 `gh release`, `gh workflow run`. Denials go through the same guard path as `BASH_BLOCKLIST` — the
-`PreToolUse` hook after Milestone 0 — and are written to `.vibe-racer/audit.log` like every other
+`PreToolUse` hook the prerequisite task installs — and are written to `.vibe-racer/audit.log` like every other
 denial.
 
 ### 5.2 Hard requirement — the read-only allowances
@@ -341,20 +323,30 @@ cover the allowances as explicitly as the denials.**
 Per Q2, the message names the command, the rule, and that this step is the operator's:
 
 ```
-Denied: Bash 'git push -u origin HEAD' — vibe-racer never pushes. Pushing, opening PRs, merging,
-tagging, releasing and deploying are the operator's, after the task reaches `done`.
+Denied: Bash 'git push -u origin HEAD' — `git push` is denied in an execute session. Pushing,
+opening PRs, merging, tagging, releasing and deploying are the operator's, after the task reaches
+`done`.
 ```
 
 ### 5.4 Guard scope
 
-`ready_to_execute` Bash only. `radio` stays prompt-only, before or after Milestone 0, and its
+**`gh` is not denied; five commands are (operator decision, 2026-10-10).** `gh` and `git` stay
+usable from an execute session — gate verification depends on them (§5.2). The stated consequence:
+`gh api` can still write to the remote, so the claim this milestone supports is "the guard denies
+`git push`, `gh pr create`, `gh pr merge`, `gh release` and `gh workflow run`", not "vibe-racer
+cannot push". The three security documents use the first wording and keep two residuals under
+Known Limitations: `gh api`, and a command hidden inside another shell (`sh -c "git push"`,
+`eval`, a script), which the guard reads as an argument and does not look into.
+
+`ready_to_execute` Bash only. `radio` stays prompt-only, before or after the prerequisite task, and its
 declaration in `SECURITY.md` / `docs/security.md` keeps saying so (objective, *Decisions already
 made*).
 
 ### 5.5 Doc changes
 
-`docs/security.md`, `SECURITY.md` and the README "Security" section move the no-push rule **out of
-Known Limitations**, and the blocklist count all three state is updated together — they were
+`docs/security.md`, `SECURITY.md` and the README "Security" section list the deny list **as a
+rule**, naming its five commands. Under Known Limitations the entry "vibe-racer never pushes is a
+prompt rule only" is replaced — not deleted — by the two residuals of §5.4. The blocklist count all three state is updated together — they were
 corrected to agree in #5 M8 and must keep agreeing with `guard.ts`.
 
 ---
@@ -465,7 +457,11 @@ checked out, and after milestone 3 a task's tick can only be read on its own bra
       · it is at an agent stage, OR
       · it is at a human stage with its (file, markerText) ticked, OR
       · it is at `error` and `--retry` was given
-    Tasks whose branch does not exist yet are read from the working tree (first `drive`)
+    Tasks at `need_objective` with no local branch and no remote-tracking ref are read from
+    the working tree (first `drive`). A task whose branch exists only as `origin/…` is read
+    from that ref.
+    A tick that exists only as an uncommitted edit in the working tree, for a task whose
+    branch is elsewhere, still makes the task a candidate — so step 4 can refuse and name it
 3.  Select ONE task: `--task N` if given, else the first actionable in task-number order
 4.  If the selected task's branch is not the current branch:
       · working tree dirty  -> REFUSE, name the paths, stop (§6.2)
@@ -477,7 +473,7 @@ checked out, and after milestone 3 a task's tick can only be read on its own bra
       · `need_operator` tick  -> resume, settling only the two statuses the pipeline wrote
       · `done`                -> finalizeTask: commit, "Merge … when ready"
 7.  Dispatch the handler for the resulting stage
-      · guarded session starts -> §7.3
+      · the session is guarded by the hook the prerequisite task installs (§3)
 8.  Closing output:
       · "You are now on <branch>."           (§6.4)
       · "Next: <file to read / box to tick>"  (§6.4)
@@ -490,31 +486,10 @@ working tree nor require a clean one. The mechanism is the design lap's call (de
 **Nothing actionable** → the existing "Waiting on operator" / "Waiting on human input" lists print,
 now read from each task's own branch, and `branchHint` is gone (§6.5).
 
-### 7.3 Guarded session startup after Milestone 0
+### 7.3 *(moved)*
 
-```
-handler asks for a session
-        |
-        v
-resolve lap -> persona, skills, turn budget, tool list
-        |
-        v
-install the guard as a PreToolUse hook + the lap's tool restriction
-        |
-   installed? ---- no ---> REFUSE the lap. Print §3.3. No session. Nothing spent
-        | yes
-        v
-print the `Guard:` line  (printed ONLY here — it now describes installed enforcement)
-        |
-        v
-run the session; every tool call -> the hook
-        |
-   allow -> tool runs
-   deny  -> message to the model + `.vibe-racer/audit.log` + session log
-        |
-        v
-a lap that ends because of a denial says "denied by the guard", never just "session ended" (§3.4)
-```
+Guarded session startup belongs to the prerequisite task (§3). The number is kept so the
+references to §7.2 and §7.4 elsewhere stay valid.
 
 ### 7.4 The `need_execution` sign-off, after Milestone 1
 
@@ -549,9 +524,8 @@ done" the way around a check whose whole job is keeping that work out of the tab
 
 ### 8.1 No new configuration
 
-`.vibe-racer.yml` gains **no keys**. Explicitly rejected (Q2, Q7): an `allow:` list for the Bash
-deny list, a per-task guard exemption, a warn-only guard mode, an `--unguarded` flag, a `--force`
-on `drive`.
+`.vibe-racer.yml` gains **no keys**. Explicitly rejected (Q2): an `allow:` list for the Bash
+deny list, a per-task guard exemption, a `--force` on `drive`.
 
 Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turns`.
 
@@ -560,7 +534,7 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 | Prerequisite | Status |
 |---|---|
 | Node 20+, a git repository, an Anthropic API key or `claude login` | Unchanged |
-| **An SDK that honours `PreToolUse` hooks under `bypassPermissions`** | **New.** Verified at session start; failure is the §3.3 refusal, not a crash and not a warning |
+| **The prerequisite task merged into `main`, and this branch rebuilt on it** | **New.** §3. Checked at the top of the plan lap |
 | `gh` on PATH | Still optional. Gate verification degrades to local refs when it is absent, as the execute prompt's fallback ladder already describes |
 | `git` remote configured | Not required by anything this task adds. Nothing here contacts a remote except the read-only verification commands §5.2 preserves |
 | **No new runtime dependencies** | Objective constraint. Build, lint and tests pass at every milestone; coverage only up |
@@ -580,17 +554,9 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 
 ## 9. Edge Cases And Error Recovery
 
-### 9.1 Milestone 0 — enforcement
+### 9.1 *(moved)*
 
-| Situation | Behaviour |
-|---|---|
-| Guard cannot be installed (SDK change, unknown hook surface) | Refuse the lap, §3.3. No session, nothing spent |
-| SDK emits `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` | Treated as the refusal condition, and as a **test failure** in CI |
-| The guard's own decision function throws | Existing behaviour is preserved: deny, and audit it as `Internal guard error`. Fail closed |
-| A denial ends a lap mid-session | The lap reports "denied by the guard" with tool, rule and path/command. Task goes to `error` with the stage recorded, so `drive --retry` can re-run it after the cause is fixed |
-| A legitimate lap action is denied once the rules run for real | Found by the §3.4 pre-release dry run, not by the operator. Fixed either in the lap's prompt or as a recorded guard decision — never by loosening a rule in passing |
-| A project or user settings file re-grants a tool the lap's list withholds | Must not be possible. Design question (design Q2); the outcome is asserted by a test either way |
-| `.vibe-racer/audit.log` is unwritable | The denial still happens and is still logged to the session. Auditing must never be what decides whether a rule applies |
+The enforcement edge cases belong to the prerequisite task (§3).
 
 ### 9.2 Milestone 1 — the merge ban
 
@@ -598,8 +564,11 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 |---|---|
 | Forbidden verb in an `Owner = agent` row | **Not** refused by the sign-off. Agent rows are the task's own work; the Bash deny list (§5.1) is what stops the agent acting on it, and the prompt is what stops it being written |
 | Forbidden verb inside a fenced block or behind `> ` | Inert, via `markdown-scan.ts`. Same rule as both table readers |
-| False positive — "Confirm the release tag `v0.3.0` exists on the remote" | Refused, by design (Q1). The message names the verb and the rewrite. One reword |
-| A gate legitimately named "deploy config to the staging dashboard and screenshot it" | Refused. Reworded to a verification phrasing — "configure the staging dashboard and screenshot it" — in one edit |
+| "Confirm the release tag `v0.3.0` exists on the remote" | **Passes.** The clause begins with a verification verb (§4.4) |
+| "Confirm the build, then merge PR #12" | Refused. The second clause does not begin with a verification verb; a verification verb elsewhere on the line exempts nothing |
+| False positive — "Tag the screenshot with the build number" | Refused, by design (Q1). The message names the verb and the rewrite. One reword ("Label the screenshot …") |
+| A gate legitimately named "deploy config to the staging dashboard and screenshot it" | Refused. Reworded **without the forbidden verb** — "configure the staging dashboard and screenshot it" — in one edit. That is a reword, not a verification phrasing |
+| "Verify PR #12 is merged" on a PR this task depends on | Passes the keyword check — the accepted residual of §4.4. Caught, if at all, by the plan-review dependency question (§4.3) |
 | Operator deletes the gate row instead of rewording | Allowed and correct, provided the remaining table still satisfies the trailing-row rule. They take the step by hand, outside the pipeline |
 | Operator re-ticks without changing anything | Refused again, identically. The check is deterministic and stateless |
 | Execution Status table unparsable at sign-off | Table checks warn and skip; the `03_plan.md` G-section scan still runs; the tick is honoured (§4.5) |
@@ -614,8 +583,11 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 | Operator on `main`, task paused on its branch, tree clean | Checkout, read the tick, resume. **This is the E17 fix** |
 | Operator on `main`, tree dirty, selected task is on another branch | Refuse, name the paths, stop (§6.2) |
 | Operator already on the task branch, tree dirty | Proceed. A dirty tree on the task branch is not vibe-racer's business (§6.2 scope note) |
-| Operator's dirty file *is* the ticked questions file, on `main` | Refused. The message names it; they commit or stash and re-drive. This is the transition cost of §6.2, and it is rare afterwards because `drive` now leaves them on the task branch (§6.4) |
-| Task branch does not exist yet (first `drive`) | Created from the current HEAD, as today. The candidate set reads that task from the working tree (§7.2 step 2) |
+| Operator's dirty file *is* the ticked questions file, on `main` | Refused. The message names it; they commit or stash and re-drive. **The candidate set must therefore see this tick** even though the task is otherwise read from its branch (§7.2 step 2) — otherwise the outcome is a silent "nothing to do". This is the transition cost of §6.2, and it is rare afterwards because `drive` now leaves them on the task branch (§6.4) |
+| Task branch exists only as a remote-tracking ref (`origin/vibe-racer/NNNN_slug` — a fresh clone, or a local branch deleted after a push) | **Not** a first `drive`, whatever `state.yml` says on the current branch: on `main` it says `need_objective` for the whole life of the task. `drive` reads the task from that ref and creates the local branch **from it**, saying so. A local read of refs already fetched; no network |
+| Task branch exists on the remote but was never fetched | Indistinguishable from a first `drive` without a network call, and `drive` makes none here. Stated limit: `git fetch` before `drive` on a clone that may be behind |
+| Task branch is missing locally and on every remote-tracking ref, and `state.yml` is past `need_objective` (deleted after its merge) | **Not** treated as a first `drive`. The task is read from the working tree, and `drive` refuses to create the branch silently — it names the missing branch and how to recreate it. Creating it from the current HEAD would cut it from another task's work |
+| No local branch, no remote-tracking ref, and `state.yml` says `need_objective` (first `drive`) | Created from the current HEAD, as today. The stage is the signal, not the folder's contents — an extra file dropped beside the objective changes nothing. The candidate set reads that task from the working tree (§7.2 step 2) |
 | Checkout fails — conflict, locked index, detached HEAD, missing branch | Report the git error verbatim, name the branch, start no session. The operator's tree is left where it was |
 | Two actionable tasks on different branches | Run the first, name the rest, stop (§6.3) |
 | `--task N` names a task that is not actionable | Existing `ineligibleMessage` behaviour, unchanged, including the `need_operator` wording that says "paused waiting on the operator", never "error" |
@@ -629,16 +601,14 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 
 ### 10.1 In scope
 
-- **M0**: guard registered where the SDK consults it; the lap tool list becomes a restriction; the
-  `Guard:` and `init` lines print only when enforcement is installed; refuse-to-start when it is
-  not; wiring tests; shadow warning as a failure; docs + CHANGELOG + npm deprecation.
 - **M1**: plan-prompt gate categories and both worked examples lose every merge/push/PR verb; the
   principle stated in words; `ai_plan_review` dependency questions from plan text; the sign-off
   forbidden-verb refusal with named rows and a rewrite hint; `qaPrompt` loses its gate list and the
   coverage statement; `CLAUDE.md` / `docs/how-it-works.md` / `docs/security.md` updates.
 - **M2**: `ready_to_execute` Bash deny list, with `git fetch` / `gh pr view` / `gh pr list`
-  explicitly preserved and tested; audited denials with actionable messages; the no-push rule moves
-  out of Known Limitations in all three documents and the blocklist counts stay in agreement.
+  explicitly preserved and tested; audited denials with actionable messages; the deny list is
+  documented as a rule in all three documents, with `gh api` and nested shells as its stated
+  residuals, and the blocklist counts stay in agreement.
 - **M3**: checkout before the advancement pass; dirty-tree refusal; one task per run with the
   others named; leave the operator on the task branch and say so; `branchHint` deleted; the pause
   block's closing line reworded without the branch.
@@ -649,9 +619,10 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 |---|---|
 | **`depends_on`** (`new --after 0004`, `drive` refusing to start execution until the dependency is an ancestor of `main`) | The structural answer to sequencing, but a new feature with its own questions about `new` and `pitwall`. Already recorded in `plans/backlog.md` |
 | **Repo probing for dependencies** (`gh pr list`, `git branch --contains` sweeps) | Q3. Noise at a pit stop. Goes to `plans/backlog.md` beside `depends_on` |
-| **`radio`** | Spawns the operator's own interactive `claude` CLI, where the guard does not run — before or after M0. The declaration keeps saying so |
+| **Making the guard run** (hook transport, the lap tool list as a restriction, refuse-to-start, the 0.3.0 disclosure and release) | The prerequisite task (§3). Sequenced before this one |
+| **`radio`** | Spawns the operator's own interactive `claude` CLI, where the guard does not run — before or after the prerequisite task. The declaration keeps saying so |
 | **Leaving `bypassPermissions`** | Sessions are unattended by design. The fix is to enforce inside that mode, not to start prompting |
-| **Any override** — `--force`, `allow:`, a magic comment, `--unguarded`, warn-only | Q2, Q7, Q8. A property with a switch is a default |
+| **Any override** — `--force`, `allow:`, a magic comment | Q2. A property with a switch is a default |
 | **Follow-up #7's four questions** (which QA scope, where to record it, squash merges, the coverage statement) | Closed by construction. Dropped, not answered (§2.1) |
 | **Other stages' Bash rules; when QA runs; pushing, pulling, rebasing or merging any branch from `drive`; creating the task branch** | Objective, *Out of scope*. Branch creation is already the first `drive`'s job |
 | **Batch-driving several tasks in one run** | Q5. A different product decision |
@@ -659,8 +630,8 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 ### 10.3 Standing constraints
 
 - **Guardrails only tighten.** Nothing here grants a tool, relaxes the path jail or lets an agent
-  push. M0 changes *where* rules are enforced, not *what* they are; a rule that turns out to be
-  wrong once it really runs is fixed as its own recorded decision.
+  push. A rule that turns out to be wrong once it really runs is fixed as its own recorded
+  decision.
 - **`state.yml` stays pipeline-owned.** The agent signals through plan files only; stage changes go
   through `updateStage`.
 - **One markdown reader.** Any change to `markdown-scan.ts` changes both readers at once and
@@ -672,20 +643,13 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 
 ## 11. Acceptance Criteria
 
-### AC0 — Enforcement that actually runs *(ships alone, as a patch release)*
+### AC0 — *(moved)*
+
+AC0.1–AC0.10 belong to the prerequisite task (§3). One criterion remains here:
 
 | ID | Criterion |
 |---|---|
-| AC0.1 | In a real session under `bypassPermissions`, a `Write` outside the plan folder at a review stage is **denied** and appears in `.vibe-racer/audit.log` |
-| AC0.2 | In a real session, `Bash` at a review stage is denied |
-| AC0.3 | In a real session at `ready_to_execute`, a `BASH_BLOCKLIST` command is denied |
-| AC0.4 | A tool outside the lap's list is denied, or absent from the session's tool list |
-| AC0.5 | No session emits `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`; CI fails if one does |
-| AC0.6 | A wiring test fails if the guard is passed only as `canUseTool` |
-| AC0.7 | When enforcement cannot be installed, `drive` prints §3.3 and starts **no** session |
-| AC0.8 | The `Guard:` line and `init`'s security line print only when the enforcement they describe is installed, and `init`'s wording does not name `canUseTool` |
-| AC0.9 | Every lap has been run once for real against a throwaway task with the guard live, and its audit log read; each denial is recorded as correct-and-prompt-fixed or wrong-and-rule-fixed (§3.4) |
-| AC0.10 | `SECURITY.md`, `docs/security.md`, `docs/how-it-works.md`, `CLAUDE.md` and the README name the hook mechanism; the two security documents carry the dated 0.3.0 line; the CHANGELOG has the Security entry; npm 0.3.0 is deprecated with a pointer to the patch |
+| AC0.1 | Before the plan lap writes a plan, the three requirements in §3 are confirmed to hold on `main`; if one does not, it is raised as a plan question |
 
 ### AC1 — Plans never ask for a merge
 
@@ -694,7 +658,7 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 | AC1.1 | A plan lap run against a task that depends on an unmerged branch produces a **plan question**, not a gate row |
 | AC1.2 | A hand-written playbook with `G1 \| Merge PR #12 \| operator \| pending` followed by `M1` has its sign-off tick **refused with the row named**, the box unticked, and the rewrite hint printed |
 | AC1.3 | A test asserts that `EXECUTION_TABLE_SPEC`, `PAUSE_BLOCK_SPEC` and the rendered plan and execute prompts contain **no** merge, push or PR verb in any gate example |
-| AC1.4 | Each forbidden verb in §4.4's list is refused, and each verification phrasing (`confirm`, `check`, `verify`, `inspect` + the same noun) passes — tested as explicitly as the denials |
+| AC1.4 | Each forbidden verb in §4.4's list is refused; each clause that **begins** with a verification verb (`confirm`, `check`, `verify`, `inspect`) passes; a line with a verification verb in one clause and a forbidden verb in another (`Confirm the build, then merge PR #12`) is refused; a command form is refused whatever precedes it — all tested as explicitly as the denials |
 | AC1.5 | A forbidden verb inside a fence or behind `> ` does **not** refuse |
 | AC1.6 | A forbidden verb in an `Owner = agent` row does not refuse the sign-off |
 | AC1.7 | An unparsable table warns and honours the tick; the `03_plan.md` G-section scan still runs |
@@ -709,7 +673,7 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 | AC2.1 | From a `ready_to_execute` session, each of `git push`, `gh pr create`, `gh pr merge`, `gh release`, `gh workflow run` is refused and audited |
 | AC2.2 | From the same session, `git fetch`, `gh pr view` and `gh pr list` **pass** |
 | AC2.3 | Each denial message names the command, the rule and that the step is the operator's |
-| AC2.4 | `docs/security.md`, `SECURITY.md` and the README agree with `guard.ts` on the rule set and the blocklist count, and none lists the no-push rule under Known Limitations |
+| AC2.4 | `docs/security.md`, `SECURITY.md` and the README agree with `guard.ts` on the rule set and the blocklist count, the deny list is stated as a rule naming its five commands, and `gh api` and nested shells (`sh -c`) are listed as its residual limitations. None of the three says "cannot push" |
 
 ### AC3 — `drive` operates on the task branch
 
@@ -729,19 +693,19 @@ Existing keys are untouched: `repo`, `plans_dir`, `context`, `skills`, `max_turn
 ## 12. Open Questions Handed To The Design Lap
 
 Answered here, closed: the verb list and its false positives (Q1), overrides (Q2), dependency
-detection depth (Q3), dirty tree (Q4), multiple tasks (Q5), final branch and signposting (Q6),
-refuse-to-start (Q7), warn-only (Q8), release and disclosure (Q9).
+detection depth (Q3), dirty tree (Q4), multiple tasks (Q5), final branch and signposting (Q6).
+Q7–Q9 (refuse-to-start, warn-only, release and disclosure) travel with the prerequisite task; Q9's
+"ships alone as a patch" is withdrawn.
 
 Deliberately left to design, as the objective says:
 
-1. **How Layer 1 becomes a restriction** — removing the tool from the model's context, a
-   default-deny branch in the hook, or both; and whether `settingSources: ["project", "user"]`
-   lets a settings file re-grant what the lap's list withholds (objective open question 5).
-2. **How "enforcement is installed" is detected** — so that §3.3's refusal is a fact about this
-   SDK rather than a version string we hope matches.
+1. **Where the forbidden-verb list lives**, and how a verification verb exempts a clause, so the
+   sign-off, the plan prompt and the prompt-spec tests share exactly one copy of the rule.
+2. **Where the five denied commands live** so the plan check and the guard rule cannot drift.
 3. **How a task's tick is read from its own branch without moving the working tree** (§7.2
-   step 2).
-4. **Where the forbidden-verb list lives** so the sign-off, the plan prompt and the prompt-spec
-   tests share exactly one copy of it.
+   step 2), including the uncommitted-tick and missing-branch cases of §9.3.
 
-These are carried into `02_design_questions.md` as Q1, Q3, Q5 and Q4 respectively.
+4. **How the plan-review handler finds named identifiers and reports their status** to the
+   session (§4.3).
+
+These are carried into `02_design_questions.md` as Q1, Q2, Q3 and Q4 respectively.
