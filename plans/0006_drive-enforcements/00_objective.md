@@ -6,6 +6,10 @@ pushes, opens, merges, releases or runs anything on the remote. Task #5 (infinit
 established the pause that makes a human-owned step stoppable; this task closes the three gaps it
 left open around git, plus one it created.
 
+It also carries one thing found on 2026-10-10 that comes before all of them: **the tool guard does
+not run.** Every rule this task adds to the guard, and every rule the guard already has, is inert
+until that is fixed — so it is Milestone 0.
+
 This folds together the three follow-ups #5 carved out — the guard rule (formerly
 `0006_guard-enforces-the-no-push-rule`), QA scope after a mid-task merge (formerly
 `0007_qa-scope-survives-mid-task-merges`) and `drive` on the task branch (formerly
@@ -48,6 +52,74 @@ review a task when part of it had been merged into `main` at a gate and had left
 question has no instance. Its four open questions (which scope, where to record it, squash
 merges, the coverage statement) are dropped, not answered; the coverage statement the QA prompt
 prints today is removed with them.
+
+**Neither security layer is enforced (found 2026-10-10).** `runAndStream`
+(`src/claude/session.ts`) starts every session with `permissionMode: "bypassPermissions"` and
+passes the guard as `canUseTool`. Under the installed SDK (`@anthropic-ai/claude-agent-sdk`
+0.3.270) that mode approves every tool call before the callback is consulted. The SDK says so
+itself on every session, as a Node warning with code `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`:
+
+> canUseTool will not be invoked: permissionMode 'bypassPermissions' auto-approves every tool call
+> (except explicit deny rules) before the callback is consulted. To gate every tool call, use a
+> PreToolUse hook instead.
+
+Three live probes against that SDK, each a throwaway session in a scratch directory with
+`settingSources: []`:
+
+| Session | Asked to | Result |
+|---|---|---|
+| bypass + a `canUseTool` that denies everything | `Write` a file | callback called **0** times; file written |
+| bypass + a `PreToolUse` hook that denies everything | `Write` a file | hook called once; file **not** written |
+| bypass + `allowedTools: ["Read", "Glob", "Grep"]`, no guard | `Write` a file, then `touch` one with `Bash` | both tools in context, both ran, both files created |
+
+So Layer 2 (Rule 0, the path jail, the plan-folder jail at review stages, the Bash block at review
+stages, `BASH_BLOCKLIST`, the sensitive-path rules, the audit log of denials) never runs, and
+Layer 1 does not restrict either: `allowedTools` is an auto-approve list, not a filter on what the
+model can call. A review session that "has Read, Glob, Grep, Write" in fact has Bash, Edit and
+everything else, kept to its one questions file by the prompt alone. Meanwhile the session log
+prints `Guard: path-jail to ./<plan> · tools: [...] · bash: blocked (review stage)`, `init` prints
+`Security: canUseTool path-jail enabled`, and `SECURITY.md`, `docs/security.md`,
+`docs/how-it-works.md`, `CLAUDE.md` and the README all describe both layers as enforced.
+
+The tests do not catch it: `tests/claude/session.test.ts` mocks `query`, pulls `canUseTool` out of
+the options it was called with and invokes it by hand. That proves the callback is passed, not
+that anything calls it.
+
+npm `vibe-racer@0.3.0` (published 2026-09-13) has the same wiring and the same SDK range, so the
+published package is affected, not only this checkout.
+
+---
+
+## Milestone 0 — The guard actually runs
+
+Before anything is added to the guard, make the guard and the tool list real under the permission
+mode the sessions run in.
+
+- **Layer 2 moves to where the SDK consults it.** The decision function in `src/claude/guard.ts`
+  stays as it is — same rules, same messages, same audit entries — and is registered as a
+  `PreToolUse` hook in `runAndStream` instead of (or as well as) `canUseTool`. Every tool call of
+  every guarded session goes through it, including tools that are not in the lap's list.
+- **Layer 1 becomes a restriction.** A tool that is not in the lap's list is denied, not merely
+  left unlisted. Whether that is done by removing the tool from the model's context
+  (`tools` / `disallowedTools`), by a default-deny branch in the hook, or both, is the design
+  lap's call; `Skill` keeps its existing allowance when a lap resolves skills.
+- **The log line cannot lie.** `formatGuardSummary` and the `init` line are printed only when the
+  enforcement they describe is installed, and `init`'s wording no longer names `canUseTool`.
+- **A test that would have caught this.** At least one test asserts the wiring the SDK honours
+  (the guard is registered under `hooks.PreToolUse` in the options `query` receives, and a tool
+  outside the lap's list is denied), and the SDK's `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning is
+  treated as a failure, not as log noise. A live-SDK check like the probes above is added if it
+  can run without a paid session in CI; if not, it is a documented manual check in the release
+  steps.
+- **Docs.** `SECURITY.md`, `docs/security.md`, `docs/how-it-works.md`, `CLAUDE.md` and the README
+  name the mechanism that is actually used, and the CHANGELOG carries a Security entry saying
+  plainly that 0.3.0 did not enforce the guard.
+
+**Acceptance.** In a real session under `bypassPermissions`: a `Write` outside the plan folder at
+a review stage is denied and audited; `Bash` at a review stage is denied; a `BASH_BLOCKLIST`
+command at `ready_to_execute` is denied; a tool outside the lap's list is denied or absent from
+the session's tool list. No session emits `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`. The wiring test
+fails if the guard is passed only as `canUseTool`.
 
 ---
 
@@ -95,11 +167,13 @@ any gate example (a test asserts it).
 
 Make "vibe-racer never pushes" a guard rule, not just a prompt rule. Today the rule that an
 execute session never pushes, opens or merges a PR, cuts a release or runs a workflow lives only in
-`executeMilestonePrompt` and the `radio` role description. `canUseTool` does not block any of it.
+`executeMilestonePrompt` and the `radio` role description. The guard does not block any of it.
+This milestone depends on Milestone 0: a deny list added to a guard that is never called denies
+nothing.
 
 - Add a `ready_to_execute` deny list to the Bash guard for, at minimum: `git push`,
   `gh pr create`, `gh pr merge`, `gh release`, `gh workflow run`. The denial goes through the
-  same `canUseTool` path as the existing `BASH_BLOCKLIST` and is written to the audit log like
+  same guard path as the existing `BASH_BLOCKLIST` (the `PreToolUse` hook after Milestone 0) and is written to the audit log like
   every other denial.
 - **Hard requirement — the read-only allowances.** `git fetch`, `gh pr view` and `gh pr list`
   must stay allowed. Gate verification runs exactly these to confirm a gate cleared. A deny list
@@ -151,7 +225,8 @@ branch whatever branch was checked out beforehand; the two policy decisions are 
 | #7 | Closed by construction; its questions dropped, coverage statement removed |
 | Enforcement of the merge ban | Prompt **and** deterministic sign-off refusal; a keyword check is acceptable because the cost of a false positive is one reword |
 | Guard scope | `ready_to_execute` Bash only; `radio` stays prompt-only and the declaration keeps saying so |
-| Milestone order | 1, then 2, then 3 — the prompt fix stops the next planned task from producing the row; the guard is mechanical; the checkout carries the design decisions |
+| Milestone order | 0, then 1, then 2, then 3 — nothing the guard promises is true until 0 lands, and 2 is built on it; the prompt fix stops the next planned task from producing the row; the guard rule is mechanical; the checkout carries the design decisions |
+| Guard mechanism | A `PreToolUse` hook, which the SDK consults under `bypassPermissions` (probed). The rules in `guard.ts` do not change in Milestone 0 — only where they are called from |
 | Task number | Keeps #6: the three shipped security documents already point at "follow-up #6" for the guard rule |
 
 ## Open questions for the product and design laps
@@ -165,20 +240,32 @@ branch whatever branch was checked out beforehand; the two policy decisions are 
 4. Does the pause block's closing line still name the branch after milestone 3, as a courtesy, or
    does it go?
 
+5. Milestone 0: is a tool outside the lap's list removed from the model's context, denied by the
+   hook, or both? And does `settingSources: ["project", "user"]` let a settings file re-grant what
+   the lap's list withholds?
+6. Milestone 0: the guard's rules have never run against a real session under this SDK. Which of
+   them deny something the laps legitimately do today, and is that found by a dry run before
+   release or by the first real race?
+7. Milestone 0: does it ship on its own as a patch release ahead of milestones 1–3, and what do
+   the 0.3.0 documents say in the meantime?
+
 ## Out of scope
 
 - A `depends_on` precondition (`new --after 0004`, `drive` refusing to start execution until the
   dependency's branch is an ancestor of `main`). The structural answer to sequencing, but a new
   feature with its own questions about `new` and `pitwall`. Recorded in `plans/backlog.md`.
-- `radio`, which spawns the operator's own interactive `claude` CLI where `canUseTool` does not
-  run.
+- `radio`, which spawns the operator's own interactive `claude` CLI where the guard does not
+  run, before or after Milestone 0.
+- Leaving `bypassPermissions` for another permission mode. The sessions are unattended by design;
+  the fix is to enforce inside that mode, not to start prompting.
 - Any other stage's Bash rules; changing when QA runs; pushing, pulling, rebasing or merging any
   branch from `drive`; creating the task branch (already the first `drive`'s job).
 
 ## Constraints
 
 - Guardrails only tighten. Nothing here grants a tool, relaxes the path jail or lets an agent
-  push.
+  push. Milestone 0 changes where the rules are enforced, not what they are; a rule that turns out
+  to be wrong once it really runs is fixed as its own recorded decision, not loosened in passing.
 - `state.yml` stays pipeline-owned; the agent signals through plan files only.
 - Backward compatible with in-flight tasks: an existing playbook with a non-merge gate still
   signs off and executes; one with a merge gate is refused with the row named, not silently

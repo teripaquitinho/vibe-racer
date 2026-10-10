@@ -185,6 +185,80 @@ The signposting, then:
   message's "Merge `vibe-racer/…` when ready", and the new closing line above. The operator needs
   the name to merge; they no longer need it to drive.
 
+## The guard that was not running — added 2026-10-10
+
+> Added after the objective gained Milestone 0. Under `bypassPermissions` the SDK never calls
+> `canUseTool`, and `allowedTools` does not restrict the tool set, so neither security layer has
+> been enforced (probed against SDK 0.3.270; see the objective's "Why"). The answers below are
+> proposals for the operator to confirm or rewrite before ticking the box.
+
+### Q7: If the guard cannot be installed, does the session run anyway?
+
+Milestone 0 moves the guard to a `PreToolUse` hook. The failure that just happened is the general
+case: an SDK upgrade changes what is consulted, the guard is silently skipped, and the log still
+prints `Guard: path-jail…`. What does the operator get the next time enforcement is not in place —
+a warning and a session, or no session?
+
+**Answer:**
+No session. `drive` refuses to start a guarded lap it cannot guard, and says why.
+
+```
+Refusing to start the product-review lap: the tool guard is not enforced by this SDK version
+(CLAUDE_SDK_CAN_USE_TOOL_SHADOWED). No session was started and nothing was spent.
+```
+
+- The SDK's shadow warning is promoted from log noise to a hard stop. It is the one signal that
+  told the truth here, and it scrolled past.
+- The `Guard: …` line is a claim the operator reads at the top of every lap. It is printed only
+  when the enforcement it describes is installed; otherwise the line is the refusal above. A
+  security line that prints unconditionally is decoration.
+- No `--unguarded` flag, for the reason given in Q2: a property with a switch is a default. The
+  operator who wants an unguarded session already has one — `radio`, which says so.
+
+### Q8: The rules have never run for real. What happens when they start denying?
+
+Every rule in `guard.ts` was written and unit-tested, but none has been exercised by a live
+session under this SDK. Once Milestone 0 lands, laps that have been quietly doing things the guard
+forbids will start being denied mid-session — a review lap reaching for `Bash`, an execute lap
+running something `BASH_BLOCKLIST` catches, a Skill writing outside the plan folder. Do we soften
+the landing with a warn-only period?
+
+**Answer:**
+No warn-only mode. Denials are hard from the first release that has them, and the landing is
+softened before release, not after.
+
+- A warn-only guard is the current behaviour with extra log lines. It would ship a second release
+  whose documents promise enforcement that is not there.
+- Before release, each lap is run once for real against a throwaway task with the guard live, and
+  the audit log is read. Every denial is either correct (the lap's prompt is fixed to stop asking)
+  or a wrong rule (fixed as its own recorded decision, per the objective's constraint). That run
+  is an acceptance item for Milestone 0, not a nice-to-have.
+- What the operator sees when a denial ends a lap early is the denial itself — tool, rule, path or
+  command — in the session log and in the audit log, as Q2 already requires of the new deny list.
+  A lap that fails because of a denial says "denied by the guard", never just "session ended".
+
+### Q9: How is this released, and what do we say about 0.3.0?
+
+npm `vibe-racer@0.3.0` has the same wiring, and its README, `SECURITY.md` and docs state that the
+guard runs on every tool call. Milestones 1–3 still have the design, plan and execution laps ahead of
+them. Does the fix wait for them?
+
+**Answer:**
+No. Milestone 0 ships alone as a patch release as soon as it passes its acceptance, ahead of
+milestones 1–3, and the release says plainly what was wrong.
+
+- **CHANGELOG, under Security:** 0.3.0 passed the guard as `canUseTool` while running sessions in
+  `bypassPermissions`, where the SDK does not call it; the path jail, the review-stage Bash block,
+  the command blocklist and the per-lap tool list were not enforced. Upgrade.
+- **`SECURITY.md` and `docs/security.md`** describe the hook mechanism, and carry one dated line
+  recording that versions up to and including 0.3.0 did not enforce the guard. Not a footnote: an
+  operator who raced a repository they do not control on 0.3.0 needs to know the agent had full
+  permissions there.
+- **0.3.0 on npm** is deprecated with a one-line message pointing at the patch release, so
+  `npm install` says it before the README does.
+- Until the patch is out, anyone trying vibe-racer is told the same thing in words: treat a
+  `drive` session as an unrestricted agent in the repo, and use the Docker recommendation.
+
 # Complete
 
-- [ ] Ready to advance to Product Review
+- [x] Ready to advance to Product Review
