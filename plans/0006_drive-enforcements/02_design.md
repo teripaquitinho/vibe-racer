@@ -93,7 +93,7 @@ markdown reader*): it imports **only** `markdown-scan.ts`, so it can be interpol
                                   └───────────────────────┘
 ```
 
-**The fourth and fifth consumers of `markdown-scan.ts`.** `CLAUDE.md` today says a change to
+**The third and fourth consumers of `markdown-scan.ts`.** `CLAUDE.md` today says a change to
 `markdown-scan.ts` changes *both* readers at once and requires the four-playbook parse
 equivalence check (`plans/0005_infinite-loop-fix/05_qa_batch-b.md` §6). After this task it
 changes **four** readers, and the obligation grows: the equivalence check **plus**
@@ -177,7 +177,7 @@ src/
     advancement.ts           ← signOffPlaybook gains CHECK B
     store.ts                 ← + parseStateContent(): the pure half of readState
   git/
-    operations.ts            ← + readFileAtBranch(), listRemoteTaskRefs(), isTreeClean()
+    operations.ts            ← + readFileAtBranch(), listRemoteTaskRefs(), treeStatus()
 
 tests/
   pipeline/forbidden-actions.test.ts   ← NEW (the Q1 case table, verbatim)
@@ -1251,11 +1251,14 @@ session receives the §5.4 message and follows the needs_operator protocol inste
 ```
 cwd = repo root, HEAD = main, tree clean
   │
-discoverTasks(plans/)                     → #5 [need_objective per main], #6 [need_objective per main]
-  │                                          ← main's state.yml is stale for BOTH; that is expected
+discoverTasks(plans/)                     → #5 [need_decision per main], #6 [need_objective per main]
+  │                                          ← main's state.yml is stale for #6 (unmerged); #5 is
+  │                                            merged, so main carries its real stage
 resolveTaskSources(git, …)
-  ├─ #5  local branch gone, no remote ref, main's stage = need_objective
-  │       → case 4: branchState "missing", first drive   ⚠ see §19.1
+  ├─ #5  local branch gone, origin/vibe-racer/0005_… exists, squash-merged into main:
+  │       plan folder on HEAD identical to the ref's
+  │       → case 1a: branchState "merged", source working-tree   (03_plan_questions.md Q7.5)
+  │       → 06_decision.md not ticked → not actionable
   └─ #6  local branch exists, not current
           → case 2: readFileAtBranch("vibe-racer/0006_…", "plans/0006_…/state.yml")
                       → stage: need_operator
@@ -1411,6 +1414,13 @@ from **another task's work**, and the lap would then run and commit there.
 
 A `done` task is not actionable, so the common version of this never reaches `ensureBranch` at
 all. The case that does is a task mid-pipeline whose branch was deleted early.
+
+> **Corrected at the `need_plan` review (2026-10-11).** Case 5 needs *no branch anywhere*. #5 in
+> this repository still has `origin/vibe-racer/0005_infinite-loop-fix` and was squash-merged, so
+> it is not case 5, and §8.3 as written would read it from the stale remote ref (case 3). The
+> rule that covers a merged task whose ref survives, and the first-`drive` refusal from another
+> task's branch (§10.3), are in `03_plan_questions.md` Q7.4–Q7.5, which override this document —
+including §10.4's decision to leave `finalizeTask`'s own `checkoutBranch` call in place.
 
 ### 19.2 An unterminated fence hides a refusal
 
