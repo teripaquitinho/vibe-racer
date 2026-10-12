@@ -56,7 +56,7 @@ M5 guard-preflight.ts + the exact SDK pin          live + refuses
 M6 suppression, summary, radio + init notices      live + legible
 M7 heartbeat DETECT only (HEARTBEAT_ABORTS=false)  live + warns
  |
-G2 npm run test:live  (operator — L1..L8; L5 is the blocking prerequisite)
+G2 npm run test:live  (operator — L1..L9; L5 is the blocking prerequisite)
 M8 fork resolution: abort + bypass contract, or warning-only shipped
  |
 G3 seven-lap dry run  (operator — this branch's build, scratch repo)
@@ -151,7 +151,7 @@ test.
 | **M5** | Pre-flight refusal and the SDK pin | `guard-preflight.ts`, the refusal renderer, two call sites, exact pin, drift test | M4 | live + refuses |
 | **M6** | Denial surfaces and honest banners | suppression, `summary()`, end-of-lap block, `radio` notice, `init` banner | M4 | live + legible |
 | **M7** | Heartbeat, detect-only | `sawToolUse` consumed, `recordBypass`, stream scan, `abortController`, `HEARTBEAT_ABORTS = false` | M4, M6 | live, heartbeat warns |
-| **G2** | Run the live probe suite | `04_live_probes.md` with a result line per probe `L1`–`L8` | M7 | — |
+| **G2** | Run the live probe suite | `04_live_probes.md` with a result line per probe `L1`–`L9` | M7 | — |
 | **M8** | Fork resolution: the bypass contract | abort + `GuardBypassError` + wrapper branch + `commitPaths` + retry gate — **or** warning-only, recorded | G2 | live, heartbeat final |
 | **G3** | The dry run | `04_dry_run.md` (one line per lap) + the scratch repo's audit log | M8 | — |
 | **M9** | Classify and fix | every denial in one of F10's three outcomes; prompt fixes and any narrowing | G3 | live |
@@ -387,9 +387,11 @@ memory.
    - `tests/live/guard-live.ts` — a `requireLive()` helper that **skips** (never fails) every live
      test unless `process.env.VIBE_RACER_LIVE === "1"`, so a stray `vitest` invocation cannot spend
      money, plus a `scratchDir()` helper that makes a `mkdtempSync` cwd.
-6. `tests/live/tool-names.live.test.ts` — **probe `L8`** (Q2): start one real session with `tools`
-   set to a lap's list, read the `tools` array of the `system`/`init` message, and assert that every
-   name in `TOOLS_BY_STAGE`, `DECISION_TOOLS` and `FASTEN_TOOLS` appears in it. Whether an unknown
+6. `tests/live/tool-names.live.test.ts` — **probe `L8`** (Q2): start one real session **without the
+   `tools` option** (a narrowed session lists only its own narrowed tools, so names from every other
+   lap would be reported missing), read the `tools` array of the `system`/`init` message, and assert
+   that every name in `TOOLS_BY_STAGE`, `DECISION_TOOLS` and `FASTEN_TOOLS`, plus `Skill`, appears
+   in it. Whether an unknown
    name in the `tools` option is ignored or rejected is unverified, which is exactly why this probe
    exists.
 
@@ -560,7 +562,15 @@ assertion that the hook is installed.
    - return the denial as
      `{ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: msg } }`
      — a top-level `{ behavior: "deny" }` is the `canUseTool` shape and is silently ignored on the
-     hook path.
+     hook path;
+   - **the wrapper itself fails closed.** Everything above sits inside one `try`/`catch` in the hook
+     body, and the `catch` returns the same deny shape with reason `Internal guard error: <msg>`
+     (the `internal-error` rule id, audited like any other denial, best-effort). `decideToolCall`
+     already catches its own throws, but the wrapper does more than decide — it reads the input,
+     logs, and appends to the audit log — and the SDK does not document whether a hook that throws
+     or times out (`HookCallbackMatcher.timeout`) counts as allow or deny. A guard must not depend on
+     the answer. Tier 2 pins it: a hook whose `appendAuditEntry` is mocked to throw still returns
+     `permissionDecision: "deny"`.
 3. `assertHookInstalled(options)` asserts three things and names the first failure: `hooks.PreToolUse`
    is a non-empty array; its first matcher's `hooks` array is non-empty; `"canUseTool" in options`
    is `false`. It lives here, not in `session.ts`, so `M5`'s pre-flight need not import the session
@@ -627,7 +637,8 @@ assertion that the hook is installed.
 `settingSources: ["project", "user"]` with `permissions.allow: ["Bash"]` at a review stage is still
 denied (E5); `L4` `strictMcpConfig: true` with connectors installed (E6 — context only; the hook
 denies them either way); `L6` a session with `canUseTool` reintroduced makes the warning canary
-fire.
+fire; `L9` a project `.claude/settings.json` with `disableAllHooks: true` — whether the SDK-supplied
+`PreToolUse` hook still fires under `settingSources: ["project", "user"]`.
 
 ---
 
@@ -770,7 +781,7 @@ eight times costs one screenful, and no surface in the CLI names a mechanism tha
 
 1. `src/claude/guard-hook.ts` — add to the closure: `printed: Set<string>` and
    `counts: Map<string, { tool, rule, reason, count }>`, keyed by
-   `[tool, rule, reason].join(" ")`. **`U+0000`, not `|`**: `reason` can contain any character
+   `[tool, rule, reason].join("\u0000")`. **`U+0000`, not `|`**: `reason` can contain any character
    (a path, a command, an error message), and a separator that can appear inside a field is a
    collision waiting to be found by exactly the adversarial input this module exists to handle.
    The hook body gains `if (!printed.has(key)) { printed.add(key); log.warn(msg); }` and
@@ -917,11 +928,12 @@ sessions; reaching it through `vitest` rather than through `drive` does not chan
 - [ ] `L4` — whether `strictMcpConfig: true` keeps MCP tools out of *context*; the hook denies them either way
 - [ ] `L5` — **the three false-abort cases.** For each of (a) a tool removed from context, (b) a subagent call, (c) a `server_tool_use`, record whether a `tool_result` arrived whose `PreToolUse` the hook never saw, and whether `parent_tool_use_id`, `agent_id` or `isSynthetic` distinguishes it. State one of three verdicts in the file: **clean**, **excluded by lever `<name>`**, or **unexcludable**
 - [ ] `L6` — the `CLAUDE_SDK_*` warning canary fires when `canUseTool` is deliberately reintroduced
-- [ ] `L7` — **the `fasten` manual check**: in a scratch repository, run `node <task checkout>/dist/index.js fasten`, then read `.vibe-racer/audit.log`. Confirm the session is guarded, read-only, and that pre-flight ran before it
+- [ ] `L7` — **the `fasten` manual check**: in a scratch repository, run `node <task checkout>/dist/index.js fasten`, and confirm three things: the `Guard:` banner is printed and lists exactly `Read, Glob, Grep`; `.vibe-racer/.gitignore` exists (pre-flight ran before the session); and the run left no file changed outside `.vibe-racer/` (`git status`). A clean run denies nothing, so an empty audit log proves nothing by itself
 - [ ] `L8` — every tool name in `TOOLS_BY_STAGE`, `DECISION_TOOLS` and `FASTEN_TOOLS` appears in the session's own tool list
+- [ ] `L9` — **`disableAllHooks`.** A scratch project whose `.claude/settings.json` sets `"disableAllHooks": true`, under `settingSources: ["project", "user"]`: does the SDK-supplied `PreToolUse` hook still fire, and is the out-of-list `Write` still denied? The SDK's settings schema documents the key as "Disable all hooks", and its hooks-listing types distinguish "session hooks" from settings-file hooks without saying which the key silences. Record one of: **hook fires regardless** (nothing to do), or **hook silenced** — then `M8` also makes pre-flight check 2 read the loaded settings files (`.claude/settings.json`, `.claude/settings.local.json`, `~/.claude/settings.json`) and refuse with `fix: remove "disableAllHooks" from <file>` when any sets it, the same way a tracked audit log refuses. The guard must not depend on a key the host project controls
 - [ ] If the suite cannot run at all (no budget, no credentials), say so in the file against every probe. **Do not tick this as "skipped"** — `M8` then takes the warning-only branch and `05_qa.md` records that the abort was never probed
 
-**Verification:** `test -f plans/0007_guard-actually-runs/04_live_probes.md && grep -cE '^\| *L[1-8] *\|' plans/0007_guard-actually-runs/04_live_probes.md && grep -iE 'clean|lever|unexcludable|not run' plans/0007_guard-actually-runs/04_live_probes.md`
+**Verification:** `test -f plans/0007_guard-actually-runs/04_live_probes.md && grep -cE '^\| *L[1-9] *\|' plans/0007_guard-actually-runs/04_live_probes.md && grep -iE 'clean|lever|unexcludable|not run' plans/0007_guard-actually-runs/04_live_probes.md`
 
 ---
 
@@ -958,7 +970,10 @@ acceptance depends on.
 ### Tasks
 
 1. **Read `plans/0007_guard-actually-runs/04_live_probes.md` first** and record the chosen branch
-   and the `L5` verdict verbatim in the milestone's Notes cell. For branch B, implement the lever as
+   and the `L5` verdict verbatim in the milestone's Notes cell. Record the `L9` verdict too: on
+   **hook silenced**, add the settings-file read to pre-flight check 2 in `guard-preflight.ts`
+   (refusal and `fix` as `G2`'s `L9` line states), with a tier-2 case per settings file, regardless
+   of which `L5` branch is taken. For branch B, implement the lever as
    a single filter in the detect loop (`parent_tool_use_id !== null`, `agent_id`, or `isSynthetic`),
    with a comment naming the probe that motivated it.
 2. `src/claude/guard-hook.ts`: `export class GuardBypassError extends Error` carrying `toolName`,
@@ -1264,7 +1279,7 @@ M2 tools.ts + live scaffolding   M3 audit.ts union/rotation + RED wiring test
             M7 heartbeat DETECT (HEARTBEAT_ABORTS = false)
                     |
                     v
-            G2 (operator: npm run test:live — L1..L8; L5 blocks)
+            G2 (operator: npm run test:live — L1..L9; L5 blocks)
                     |
                     v
             M8 fork resolution (A / B / C)
@@ -1308,7 +1323,7 @@ way.
 |---|---|---|---|
 | **1 — rules** | `decideToolCall` called directly; `tools.ts`; `audit.ts`; `GuardRun`'s bookkeeping. No SDK, no network, no log output | `npm run test` | M1, M2, M3, M6 |
 | **2 — wiring** | `query` mocked: `hooks.PreToolUse` present, `canUseTool` absent, the captured hook denying in the SDK's **real input shape**, list identity, the audit line on disk, the four pre-flight triggers, the heartbeat contract, the retry gate | `npm run test` | M3 (red), M4, M5, M6, M7, M8 |
-| **3 — live** | Real paid sessions in a scratch directory. Never in `npm run test`, never required by CI, skipped without `VIBE_RACER_LIVE=1` | `npm run test:live` | M2 (`L8`), M4 (`L1`–`L4`, `L6`), M7 (`L5`); **run at G2** |
+| **3 — live** | Real paid sessions in a scratch directory. Never in `npm run test`, never required by CI, skipped without `VIBE_RACER_LIVE=1` | `npm run test:live` | M2 (`L8`), M4 (`L1`–`L4`, `L6`, `L9`), M7 (`L5`); **run at G2** |
 
 The **dry run** (`G3`) is not a test tier. Its output is an audit log and one line per lap, which
 `M9` classifies and `M10` records. Its pass bar: *every lap completed its own document once under

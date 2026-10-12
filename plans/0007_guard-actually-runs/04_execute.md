@@ -20,7 +20,7 @@ M4  guard-hook.ts + session-options.ts    *** THE FIX — enforcement is live he
 M5  guard-preflight.ts + the exact SDK pin       live + refuses
 M6  suppression, summary, radio + init notices   live + legible
 M7  heartbeat DETECT only (HEARTBEAT_ABORTS=false)
-G2  npm run test:live        operator — L1..L8, and L5 blocks M8
+G2  npm run test:live        operator — L1..L9, and L5 blocks M8
 M8  fork resolution: abort + bypass contract, or warning-only
 G3  seven-lap dry run        operator — this branch's build, scratch repo
 M9  classify every denial; prompt fixes and any narrowing
@@ -112,11 +112,11 @@ every such row is followed by the milestone it unblocks.
 | M1 | `guard.ts` becomes a decision core | `agent` | `pending` | — | Byte-identity message table written **first**, from the current source. Rule 1 (review-stage Bash) stays before rule 2 (membership). `createToolGuard`, its `deny()` and the unconditional `Skill` allow are deleted in the same commit as the test retarget |
 | M2 | `tools.ts`, one list from one place | `agent` | `pending` | — | Seeds `TaskOutput`/`TaskStop` only where `Bash` is listed; `TodoWrite`/`BashOutput`/`KillShell` do **not** exist in this SDK (Q2 overrides design §19.1). Also lands the live-tier scaffolding and probe `L8` |
 | M3 | `audit.ts` becomes evidence | `agent` | `pending` | — | Ends by adding the **red** wiring test (`it.fails`, both regression assertions in one test). The suite stays green at M3 |
-| M4 | **The fix: the hook runs** | `agent` | `pending` | — | `hooks.PreToolUse` with no matcher; `canUseTool` gone; `tools` narrowing replaces `allowedTools`; banner printed only downstream of `assertHookInstalled`. Flips M3's `it.fails` to `it` — the red-to-green transition is this milestone's acceptance evidence |
+| M4 | **The fix: the hook runs** | `agent` | `pending` | — | `hooks.PreToolUse` with no matcher; `canUseTool` gone; `tools` narrowing replaces `allowedTools`; banner printed only downstream of `assertHookInstalled`; the hook wrapper fails closed (its own `try`/`catch` returns deny). Flips M3's `it.fails` to `it` — the red-to-green transition is this milestone's acceptance evidence |
 | M5 | Pre-flight refusal and the SDK pin | `agent` | `pending` | — | Four checks reported 1-2-3-4; refusal renderer in one place; call sites are `drive` (after task selection, before `checkoutBranch`) and `fasten`. Pin `0.3.270` exactly and regenerate `package-lock.json` in the same commit |
 | M6 | Denial surfaces and honest banners | `agent` | `pending` | — | Suppression keyed on `(tool, rule, reason)` with a `U+0000` separator; `summary()` null at zero and printed in a `finally`; `radio` notice; `init` banner no longer says `canUseTool` |
 | M7 | Heartbeat, detect-only | `agent` | `pending` | — | `HEARTBEAT_ABORTS = false` — warn and audit, do not abort. Writes probe `L5`, which `G2` runs. Record in Notes that the abort is unshipped pending `G2` |
-| G2 | Run the live probe suite (`npm run test:live`) | `operator` | `pending` | — | Unblocks M8. Real paid sessions — the spend is the operator's. Results go in `04_live_probes.md`, one row per probe `L1`–`L8`. **`L5`'s verdict selects M8's branch**; `L7` is the manual `fasten` check |
+| G2 | Run the live probe suite (`npm run test:live`) | `operator` | `pending` | — | Unblocks M8. Real paid sessions — the spend is the operator's. Results go in `04_live_probes.md`, one row per probe `L1`–`L9`. **`L5`'s verdict selects M8's branch**; `L7` is the manual `fasten` check; `L9` (`disableAllHooks`) may add a pre-flight trigger in M8 |
 | M8 | Fork resolution: the bypass contract | `agent` | `pending` | — | Read `04_live_probes.md` **first** and record the verdict verbatim here. Branch A (clean) or B (lever) ship the abort, `GuardBypassError`, the wrapper branch, `commitPaths`, the two `state.yml` fields and the retry gate. Branch C (unexcludable, or `L5` not run) ships warning-only and documents why |
 | G3 | The seven-lap dry run | `operator` | `pending` | — | Unblocks M9. **This branch's build**, in a scratch repository, with a throwaway task. Leaves `04_dry_run.md` (one line per lap) and `dry-run-audit.log`. Redact credentials before copying — the secret scanner runs on M9's commit |
 | M9 | Classify and fix | `agent` | `pending` | — | Every denial into one of F10's three outcomes; prompt fixes preferred; narrowing only where a lap cannot do its documented job, recorded with the denial. Write `## Changed by M9` precisely — it is the list `G4` re-runs |
@@ -177,7 +177,7 @@ conflict (which resolves in favour of the branch) and `git worktree remove ../vi
 Execution will pause at each of these and wait for you.
 
 - **G1** — build a worktree of `main` (`git worktree add ../vibe-racer-main main`, then `npm ci && npm run build`) and drive this task from it for the rest of the task — before M1
-- **G2** — run `npm run test:live` and record probes `L1`–`L8` in `04_live_probes.md`, including the manual `fasten` check (`L7`); `L5`'s verdict selects M8's branch — before M8
+- **G2** — run `npm run test:live` and record probes `L1`–`L9` in `04_live_probes.md`, including the manual `fasten` check (`L7`); `L5`'s verdict selects M8's branch — before M8
 - **G3** — race a throwaway task through all seven laps in a scratch repository with **this branch's** build, and leave `04_dry_run.md` plus `dry-run-audit.log` — before M9
 - **G4** — re-run only the laps M9 changed, and append a `## G4 — re-run` section to `04_dry_run.md`; if nothing changed, say so and tick — before M10
 
