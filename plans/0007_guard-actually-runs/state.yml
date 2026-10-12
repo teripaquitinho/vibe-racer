@@ -1,3 +1,6 @@
-stage: need_objective
+stage: need_product
 title: guard-actually-runs
 created: 2026-10-11T06:38:08.083Z
+updated: 2026-10-12T07:07:48.373Z
+prev: ai_objective_review
+next: ai_product_review
