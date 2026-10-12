@@ -1,6 +1,6 @@
-stage: need_design
+stage: need_plan
 title: guard-actually-runs
 created: 2026-10-11T06:38:08.083Z
-updated: 2026-10-12T08:28:01.117Z
-prev: ai_product_review
-next: ai_design_review
+updated: 2026-10-12T08:55:37.646Z
+prev: ai_design_review
+next: ai_plan_review

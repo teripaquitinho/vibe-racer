@@ -104,8 +104,12 @@ export interface DenialSummary {
 
 Decisions this pins down:
 
-- **Suppression keys on `(tool, rule)`, not on the formatted message.** Two `curl` denials with
-  different URLs are the same denial for display purposes; the audit log keeps both verbatim.
+- **Suppression keys on `(tool, rule, reason)`, not on the formatted message.** Two `curl` denials
+  with different URLs share a reason (`Blocked command: curl`) and are the same denial for display
+  purposes; the audit log keeps both verbatim. `rule` alone is too coarse a key: `Blocked command:
+  curl` and `Blocked command: sudo` are both `bash-blocklist`, and suppressing the second would hide
+  a different thing the agent tried — the inline line is the only explanation of why it changed
+  course (F4). `reason` never contains the input, so the key stays stable across retries.
 - **`summary()` returning `null`** puts F4.1 ("zero denials prints nothing") in the data model
   rather than in a caller's `if`, so it cannot be forgotten at one of the two `cleanup_ready` call
   sites.
@@ -123,18 +127,32 @@ Decisions this pins down:
 ### Q3: Where does pre-flight live, who calls it, and how does it read the pinned SDK version?
 
 F3 demands all four checks run "before any session starts and before any repository side effect" —
-and `drive` currently checks out a branch at **two** call sites before dispatching — `src/cli/drive.ts:197` on the single-task path and `:33` on the all-tasks path. But the
+and `drive` checks out the task's branch at `src/cli/drive.ts:197` before dispatching. (The other
+`checkoutBranch`, at `:33`, is `finalizeTask`: the final commit of a `done` task, which starts no
+session.) But the
 checks are not all the same shape: #1 and #2 are properties of the install, #3 and #4 of the
 project. And check #2 ("the options object vibe-racer is about to pass has `hooks.PreToolUse`") is
 a statement about an object that does not exist until `runAndStream` builds it. Where does it
 actually run, and how is the pinned version read at runtime without a new dependency?
 
 **Answer:**
-**One `preflight(cwd)` called once, from `driveCommand`, immediately after `loadConfig` and
-*before* task discovery and `checkoutBranch`.** Not inside `runAndStream`: by then the handler has
-been dispatched and `drive` has already checked out a branch, so "nothing was spent" would be true
-of tokens but false of the working copy. Not in each handler either — seven call sites for one
-invariant is how check #3 ends up missing from one of them.
+**One `preflight(cwd)`, called from `driveCommand` after the task is selected and its target stage
+is known to be an agent stage, and *before* `checkoutBranch` (`drive.ts:197`).** Task discovery and
+selection only read from disk, so running them first costs nothing and breaks no promise of F3.
+Running pre-flight earlier — straight after `loadConfig` — would be wrong three ways: it would
+refuse a `drive` that has no lap to run; it would block `finalizeTask`'s commit of a finished task
+over an SDK mismatch that task no longer cares about; and it could not name the lap, which the
+reference message does ("Refusing to start the product-review lap").
+
+Not inside `runAndStream`: by then the handler has been dispatched and `drive` has already checked
+out a branch, so "nothing was spent" would be true of tokens but false of the working copy. Not in
+each handler either — seven call sites for one invariant is how check #3 ends up missing from one
+of them.
+
+**`fastenCommand` calls the same `preflight(cwd)` before `runFastenAnalysis`.** `fasten` starts a
+guarded session too (Q5), and "a session that cannot be guarded does not start" must not have a
+second entry point that skips the four checks. Two call sites, one function, one renderer for the
+refusal.
 
 ```ts
 export type PreflightResult =
@@ -151,8 +169,13 @@ inherits it. Returning the **first** failure as a single value — not an array 
 
 Resolving the four checks:
 
-1. **SDK version.** Read `node_modules/@anthropic-ai/claude-agent-sdk/package.json` via
-   `createRequire(import.meta.url).resolve(...)` and compare for **equality** against a
+1. **SDK version.** Resolve the SDK's **main entry** with
+   `createRequire(import.meta.url).resolve("@anthropic-ai/claude-agent-sdk")` and read the
+   `package.json` in that file's directory. The package's `exports` map does not expose
+   `./package.json`: resolving that subpath throws `ERR_PACKAGE_PATH_NOT_EXPORTED` (checked against
+   0.3.270), which would turn every `drive` into a refusal. The main-entry route was checked too and
+   returns `0.3.270`. A failure to resolve or parse is itself a refusal ("the SDK version could not
+   be read"), never a pass. Compare for **equality** against a
    `VERIFIED_SDK_VERSION = "0.3.270"` constant in `guard-preflight.ts`. No `semver` dependency —
    equality is a string compare, which is the whole point of the exact pin (C3.1). Resolving from
    the *SDK's own* `package.json` rather than vibe-racer's `dependencies` is what makes an
@@ -163,7 +186,10 @@ Resolving the four checks:
    `buildSessionOptions(...)` in `session.ts` and have pre-flight assert `hooks.PreToolUse` is
    non-empty on a representative build, with `canUseTool` absent. This is the same function
    `runAndStream` uses and the same one tier-2 asserts on — one object, three consumers, so a
-   refactor that drops the hook is caught by pre-flight *and* by a test.
+   refactor that drops the hook is caught by pre-flight *and* by a test. Pre-flight can only look
+   at a representative build, so `runAndStream` repeats the same assertion on the **real** options
+   object on the line before `query(...)` and throws if it fails — still before anything is spent
+   on that session.
 3. **Tracked audit log.** `git ls-files --error-unmatch .vibe-racer/audit.log` via the existing
    `simple-git` instance in `src/git/`. Exit status is the answer; no parsing. Skip silently when
    `cwd` is not a git repository.
@@ -196,10 +222,28 @@ iteration so an abort we initiated is distinguishable from a user `SIGINT`: a fl
 before `abort()`, checked in the `catch`.
 
 **2. The error type.** `runAndStream` throws a `GuardBypassError extends Error` carrying
-`{ toolName, toolUseId, version }`. It must be a **class, not a message convention**, because six
-handlers sit between `runAndStream` and `drive`'s `catch`, and each one currently funnels failures
-into `setError` with a formatted string. An `instanceof` check at the single place that calls
-`setError` is the only change those handlers need.
+`{ toolName, toolUseId, version }`. It must be a **class, not a message convention**, because the
+handlers sit between `runAndStream` and `drive`, and their failures are funnelled through
+`withErrorHandling` (`src/pipeline/handlers/safe-wrapper.ts`) into `setError` with a formatted
+string. The handlers' own `catch` blocks (`qa.ts`, `execute.ts`) rethrow what they do not
+recognise, so the error reaches the wrapper intact; the wrapper is the one place that changes.
+(`setError` has a second caller, `review-runner.ts:88`, for "no spec after the forced re-run". It
+is not on a session-failure path and is untouched.)
+
+On a `GuardBypassError` the wrapper does three things differently from an ordinary failure:
+
+- **It skips the "partial work" commit.** Today the wrapper runs `commitAll` *before* `setError`
+  (`safe-wrapper.ts:21`). Left as is, the output of the unguarded call would be committed as
+  `partial work (error)`, which is exactly what F5.2 forbids.
+- **It calls `setError` with the bypass fields** (layer 3).
+- **It commits `state.yml` alone**, with a path-limited commit (`git commit -- <plan>/state.yml`,
+  a new `commitPaths` next to `commitAll`), message `vibe-racer: guard bypass recorded for #N`.
+  Nothing the session wrote is in that commit. Without it the marker exists only as an uncommitted
+  change in the very tree the retry gate asks the user to clean: `git stash -u` or
+  `git reset --hard` would erase it, the task would fall back to its previous stage, and `drive`
+  would run the lap again on the same version. With it, "discard what the session left" is a safe
+  way to reach a clean tree. If this commit fails, the wrapper says so and names the file; the
+  marker is still on disk and the gate still holds for as long as it is.
 
 **3. The state contract.** Two new optional fields on `stateSchema`, alongside the existing
 `error_stage` / `error_message` — and following the precedent the operator-pause fields already set
@@ -229,6 +273,10 @@ Both are reported together here — unlike pre-flight — because they are two h
 instruction to the user, not a prioritised list of independent faults. Neither clears
 `guard_bypass`; **a successful retry does**, as part of the `updateStage` that leaves `error`, so a
 task that bypasses twice does not inherit a stale marker.
+
+The version condition compares version strings, so a checkout run through `npm link` only passes
+it after a version bump. That is intended — "the mechanism was replaced" has to be a statement
+someone made deliberately — and the refusal message says so for the linked case.
 
 ---
 
@@ -274,9 +322,19 @@ Two further decisions:
   and the existing allowance (`guard.ts`'s early `if (toolName === "Skill") return allow`) can be
   deleted — a hard-coded unconditional allow is exactly the kind of rule that outlives its reason.
   The membership check subsumes it.
-- The `tool-not-in-list` denial is checked **first**, before any path or Bash rule, so an out-of-list
+- The `tool-not-in-list` denial is checked before any path or blocklist rule, so an out-of-list
   tool gets a reason naming the stage (F2.6) rather than a path-jail reason that happens to fire
-  first.
+  first. **One rule runs ahead of it: `bash-review-stage`.** No review lap lists `Bash`, so with
+  membership first that rule would become unreachable and its message (`review stage: bash not
+  permitted`) would silently change, against F1.3. Evaluated first, the message stays byte-identical
+  and the rule stays live even if a list ever gains `Bash` by mistake.
+- **`fasten` is a guarded session with its own list.** `fasten.ts:117` already passes
+  `stage: "ai_objective_review"` and `taskPlanPath: ""`, so it gets a guard the moment the hook is
+  wired; nothing has to be added for that. Two things do: it passes `FASTEN_TOOLS` as the explicit
+  override (the stage's own list would hand it `Write`), and tier 1 pins that `Write`/`Edit` are
+  denied for it as `tool-not-in-list`. That matters because with an empty `taskPlanPath` the plan
+  jail resolves to the project root and would restrict nothing. `fasten`'s report is written by the
+  CLI from the session's returned text, so the session needs no write tool.
 
 ---
 
@@ -320,7 +378,9 @@ export type AuditEntry = DenialEntry | BypassEntry         // tagged union, `kin
   are one JSON object per line as today; adding a field is backward-compatible for anything reading
   the file, and the discriminator is what lets a future reader (the deferred `vibe-racer audit`,
   Q2's follow-up) tell the two apart without inferring from which fields are present. `rule`
-  (Q1) goes in the denial entry too.
+  (Q1) goes in the denial entry too. The five existing fields (`ts`, `stage`, `tool`, `input`,
+  `reason`) keep their names and values; `kind` and `rule` are the only additions, and
+  `01_product.md`'s criterion B is worded to match.
 - **`auditLogPath` is exported and used by `preflight`, `appendAuditEntry` and `DenialSummary`.**
   Three hand-written `resolve(cwd, ".vibe-racer", "audit.log")` calls is how a refusal ends up
   checking a different file from the one the guard writes.
@@ -329,4 +389,4 @@ export type AuditEntry = DenialEntry | BypassEntry         // tagged union, `kin
 
 # Complete
 
-- [ ] Ready to advance to Design Review
+- [x] Ready to advance to Design Review

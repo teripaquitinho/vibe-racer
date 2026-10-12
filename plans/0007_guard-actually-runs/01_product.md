@@ -277,7 +277,7 @@ the session is being killed with partial work on disk.
 | ID | Requirement |
 |---|---|
 | F5.1 | The task moves to **`error`**, with a message that distinguishes a guard bypass from an ordinary session failure: which tool bypassed the guard, and that the lap was stopped mid-flight |
-| F5.2 | **Do not commit.** vibe-racer's promise is one commit per lap; an aborted lap has no lap to commit |
+| F5.2 | **Do not commit the session's work.** vibe-racer's promise is one commit per lap; an aborted lap has no lap to commit. The one thing committed is `state.yml` itself, alone, so the bypass marker survives the user discarding the rest of the tree |
 | F5.3 | **Do not roll back.** The partial work stays in the working tree, uncommitted and visible in `git status`, so the user can `git diff` to see exactly what the session did — including what the unguarded call did. Silently reverting would destroy the only evidence of the bypass |
 | F5.4 | The abort is recorded in the audit log as its own entry type — it belongs in the same file as the denials, since both answer "what did the guard do on this task" |
 | F5.5 | The error record carries two facts beyond the message: that this is a guard bypass, and the vibe-racer version that hit it |
@@ -487,6 +487,8 @@ anything. **One round of re-run is planned; a second failure is not another row 
 ```
 vibe-racer drive
    │
+   ├─ task selection (reads only; no lap to run ⇒ no pre-flight)
+   │
    ├─ pre-flight (once per invocation, before any side effect)
    │     1. SDK version == pinned?            ── no ─┐
    │     2. hooks.PreToolUse present?         ── no ─┤
@@ -500,7 +502,7 @@ vibe-racer drive
    │                                      no branch, no commit, no state write
    │     all pass
    ▼
- task selection → branch checkout → dispatch(stage) → guarded session
+ branch checkout → dispatch(stage) → guarded session
 ```
 
 ### 13.2 A guarded session
@@ -524,7 +526,8 @@ session start
    └─ id was never seen ──► HEARTBEAT ABORT (F5)
                               • audit entry, own type
                               • stage := error, bypass marker + version recorded
-                              • no commit, no rollback — partial work left in the tree
+                              • state.yml committed alone; no commit of the session's work,
+                                no rollback — partial work left in the tree
                               • --retry blocked until version differs AND tree is clean
    ▼
  session end
@@ -665,7 +668,7 @@ the release steps (objective, "What" bullet 4).
 - [ ] Regression test: a write outside the plan folder lands a denial in `.vibe-racer/audit.log`
 - [ ] Tier-1 rule tests call the transport-neutral decision function directly
 - [ ] A live-SDK check exists as `npm run test:live`, or as a documented manual release step if it cannot run unpaid in CI
-- [ ] Rule conditions, messages and audit entries are byte-identical to today's, except where F10 recorded a narrowing
+- [ ] Rule conditions and messages are byte-identical to today's, except where F10 recorded a narrowing; audit entries keep their five existing fields unchanged and gain two (`kind`, `rule`)
 
 ### C. Refusal
 
@@ -688,7 +691,7 @@ the release steps (objective, "What" bullet 4).
 
 - [ ] The three false-abort cases are probed in the live tier **before** the abort ships
 - [ ] If any is unresolvable, the heartbeat ships warning-only and the guard still ships
-- [ ] An abort: audits its own entry type, moves to `error` with a bypass-distinct message, records the vibe-racer version, does not commit, does not roll back
+- [ ] An abort: audits its own entry type, moves to `error` with a bypass-distinct message, records the vibe-racer version, commits `state.yml` alone and nothing the session wrote, does not roll back
 - [ ] `--retry` on a bypass error refuses until the version differs **and** the tree is clean, and says which is missing
 - [ ] `--retry` on every other `error` is unchanged
 
@@ -740,19 +743,23 @@ its job under the live guard blocks the release until a follow-up task lands.
 
 ### 18.2 `fasten`'s session is a third unguarded surface, named by none of Q1–Q8
 
-`src/claude/fasten.ts` runs a session with `allowedTools: ["Read", "Glob", "Grep"]` and **no
-`stage`** — so no guard is constructed for it today, and its list restricts nothing for exactly the
-reason this whole task exists. It is not a lap, so F10's dry run does not cover it, and the
-objective's acceptance criteria do not mention it.
+`src/claude/fasten.ts` runs a session with `allowedTools: ["Read", "Glob", "Grep"]`,
+`stage: "ai_objective_review"` and an empty `taskPlanPath`. A guard is therefore already built for
+it, and like every other one it has never run. It is not a lap, so F10's dry run does not cover it,
+and the objective's acceptance criteria do not mention it.
 
-**Recommendation: guard it.** Give it an explicit read-only profile (`Read, Glob, Grep`, no `Write`,
-no `Edit`, no `Bash`) enforced by the same hook. The change is small, it only makes true a list the
-code already declares, it keeps "every session vibe-racer starts is guarded" a sentence with no
-exceptions, and it means the banner cannot lie about `fasten` either. Verification is one manual
-check in the release steps, not a dry-run lap.
+**Once the hook is wired, `fasten` is guarded whether or not anyone decides it** — so the decision
+is what profile it gets, not whether. Left alone it would inherit the objective-review list, which
+includes `Write`, with a plan jail that an empty `taskPlanPath` resolves to the whole project.
 
-**If struck**, `fasten` joins `radio` in `docs/security.md` and the README as a named, documented
-exception — and it gets F8's one-line notice for the same reason `radio` does.
+**Decision: an explicit read-only profile** (`Read, Glob, Grep`; no `Write`, no `Edit`, no `Bash`)
+enforced by the same hook, and the same pre-flight check as `drive` before its session starts. It
+only makes true a list the code already declares, it keeps "every session vibe-racer starts is
+guarded" a sentence with no exceptions, and it means the banner cannot lie about `fasten` either.
+Verification is one manual check in the release steps, not a dry-run lap.
+
+**If struck**, `fasten` keeps the objective-review profile it inherits today. Leaving it unguarded
+like `radio` is not on offer: that would mean building an exemption.
 
 ---
 
