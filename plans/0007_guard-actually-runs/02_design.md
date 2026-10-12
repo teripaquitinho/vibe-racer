@@ -485,7 +485,7 @@ const hook: HookCallback = async (input, toolUseID) => {
   if (decision.behavior === "allow") return {};                   // {} => no opinion => proceed
 
   const msg = formatDenial(decision);
-  const key = [decision.tool, decision.rule, decision.reason].join(" ");
+  const key = [decision.tool, decision.rule, decision.reason].join("\u0000");
   if (!printed.has(key)) { printed.add(key); log.warn(msg); }     // F4 inline, first of pair
   bump(counts, key, decision);                                    // F4.4 every denial counted
 

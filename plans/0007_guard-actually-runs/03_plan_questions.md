@@ -25,12 +25,13 @@ dead code and starts denying things. Every other ordering decision follows from 
 sit. What is the table?
 
 **Answer:**
-Ten agent milestones and three `Owner = operator` gate rows, in this order. Every gate is followed
+Ten agent milestones and four `Owner = operator` gate rows, in this order. Every gate is followed
 by the milestone it unblocks (`tryAdvance`'s `trailingOperatorRows` check refuses a table that ends
 on a gate), and no row merges, pushes, versions or publishes anything.
 
 | Row | Owner | What lands | Enforcement state after it |
 |---|---|---|---|
+| `G1` | **operator** | **First row of the table.** Build a worktree of `main` and drive every remaining lap of this task from it (Q4): `git worktree add ../vibe-racer-main main`, then `npm ci && npm run build` inside it. From here to `done`, every `drive` for this task is `node ../vibe-racer-main/dist/index.js drive`, run from the task checkout. A planned gate costs no session (`decideNextStep`), so this pause is free | unchanged — and the pipeline driving this task now stays unchanged too |
 | `M1` | agent | `guard.ts` → `decideToolCall`, `GuardDecision`, `GuardRuleId`; `createToolGuard` and its `deny()` deleted; tier-1 tests retargeted (§4, §16.1) | still dead — nothing calls it |
 | `M2` | agent | `tools.ts`; the seven handler `ALLOWED_TOOLS` literals collapsed; `fasten.ts` passes `FASTEN_TOOLS` (§5) | still dead |
 | `M3` | agent | `audit.ts`: tagged union, rotation, `ensureAuditDir` + `.vibe-racer/.gitignore`, boolean return, `auditLogPath` (§7) | still dead |
@@ -38,11 +39,11 @@ on a gate), and no row merges, pushes, versions or publishes anything.
 | `M5` | agent | `guard-preflight.ts`, the refusal renderer, both call sites, the exact SDK pin, the pin/constant drift test (§9, §15.1) | live + refuses |
 | `M6` | agent | Denial surfaces: suppression, `summary()` printed at every call site incl. both `cleanup_ready` sessions, `radio`'s notice, `init`'s banner (§6.4, §14) | live |
 | `M7` | agent | Heartbeat **detect** path: `sawToolUse`, `recordBypass`, the stream scan, `abortController`, `aborting` flag — with `HEARTBEAT_ABORTS = false` (warning-only) | live, heartbeat warns |
-| `G1` | **operator** | Run `npm run test:live` (probes L1–L7, §16.3). **L5 — the three false-abort cases — is the blocking prerequisite.** Record each probe's result where `M8` can read it | — |
-| `M8` | agent | Fork resolution. Probe clean ⇒ `HEARTBEAT_ABORTS = true`, `GuardBypassError`, the `withErrorHandling` branch, `commitPaths`, the two `state.yml` fields, the retry gate (§10, §12). Probe dirty and unnarrowable ⇒ record warning-only as the shipped behaviour and open the follow-up | live, heartbeat final |
-| `G2` | **operator** | The dry run: a throwaway task through all seven laps in a scratch repo with this branch linked. Leave `.vibe-racer/audit.log` and one line per lap (completed / could not complete) | — |
+| `G2` | **operator** | Run `npm run test:live` (probes L1–L7 of §16.3, plus `L8` from Q2). **L5 — the three false-abort cases — is the blocking prerequisite.** Record each probe's result where `M8` can read it | — |
+| `M8` | agent | Fork resolution. Probe clean ⇒ `HEARTBEAT_ABORTS = true`, `GuardBypassError`, the `withErrorHandling` branch, `commitPaths`, the two `state.yml` fields, the retry gate (§10, §12). `updateStage` must drop the two fields explicitly when it leaves `error`: today it spreads the whole state forward, so §12.3's "a successful retry clears the marker" is not something it does yet. Probe dirty and unnarrowable ⇒ record warning-only as the shipped behaviour and open the follow-up | live, heartbeat final |
+| `G3` | **operator** | The dry run: a throwaway task through all seven laps in a scratch repo, driven by **this branch's build** — `node <task checkout>/dist/index.js drive`, the opposite binary from `G1`'s. Rebuild the task checkout first (`npm run build`) so `dist/` is the branch's head. Leave `.vibe-racer/audit.log` and one line per lap (completed / could not complete) | — |
 | `M9` | agent | Classify and fix: every denial into one of F10's three outcomes; prompt fixes and any narrowing, each recorded with the denial that motivated it | live |
-| `G3` | **operator** | Re-run only the laps whose prompt or rule `M9` changed. If none changed, tick without a run | — |
+| `G4` | **operator** | Re-run only the laps whose prompt or rule `M9` changed. If none changed, tick without a run | — |
 | `M10` | agent | The final per-lap table where the QA lap reads it; `SECURITY.md`, `docs/security.md`, `docs/how-it-works.md`, `CLAUDE.md`, README, CHANGELOG; this repo's `.gitignore` fix (§15.3) | live |
 
 **Why `M1`–`M3` before `M4`.** Each is a refactor with **no runtime behaviour change at all** —
@@ -56,7 +57,7 @@ options object. It cannot pass before `M4` exists, so writing it first means lan
 whose own test must be skipped.
 
 **Why `M7` is warning-only and `M8` is a separate row.** F5 makes the live probe a blocking
-prerequisite for the abort. Splitting detect from abort means `G1` gates one small, reversible
+prerequisite for the abort. Splitting detect from abort means `G2` gates one small, reversible
 constant rather than a whole feature, and `M7`'s own tests (synthetic stream in, bypass entry out)
 run without the probe.
 
@@ -67,51 +68,60 @@ run without the probe.
 `02_design.md` §19.1 names `TodoWrite`, `BashOutput` and `KillShell`: in context today because
 `allowedTools` never filtered anything, in no lap's list, and about to become `tool-not-in-list`
 denials the moment `M4` lands. F2's table leaves `TaskOutput`/`TaskStop`/`ToolSearch` to the dry
-run. Do these three join that row, or do we let `G2` find them?
+run. Do these three join that row, or do we let `G3` find them?
 
 **Answer:**
-**Pre-seed all three in `M2`, as explicitly commented candidates**, and let `G2` confirm rather than
-discover:
+**The three names in the question are not in this SDK's tool list, so none of them is seeded.**
+`02_design.md` §19.1 took them from memory. The probe of 0.3.270 run while confirming issue #7 listed what a
+session actually has in context:
 
-- `BashOutput` and `KillShell` wherever `Bash` is already listed — `ready_to_execute`, `ai_qa`,
-  `cleanup_ready` (cleanup session). Not on review laps, not on `fasten`, not on the decision
-  session, none of which list `Bash`.
-- `TodoWrite` on every lap, including the review laps and the decision session.
+```
+Task, Bash, CronCreate, CronDelete, CronList, DesignSync, Edit, EnterWorktree, ExitWorktree, Glob,
+Grep, ListAgents, Monitor, NotebookEdit, PushNotification, Read, RemoteTrigger, ReportFindings,
+ScheduleWakeup, SendMessage, Skill, TaskOutput, TaskStop, ToolSearch, WebFetch, WebSearch,
+Workflow, Write, mcp__…
+```
 
-This is E8's pre-authorised case verbatim — "adding one where its parent tool is already allowed is
-the only list change F10's third outcome may make" — and Q8's principle covers all three: none has
-any reach of its own. `BashOutput` can read only what a `Bash` call the guard already approved
-produced; `KillShell` can stop only such a call; `TodoWrite` writes to the session's own todo state,
-not the filesystem.
+No `TodoWrite`, no `BashOutput`, no `KillShell`. In this SDK the tools that read and stop a
+backgrounded `Bash` are `TaskOutput` and `TaskStop`, which F2's table already names as candidates,
+and there is no todo tool in context at all. This paragraph overrides §19.1 and §19.2 of the design.
 
-**The cost of not doing it is asymmetric.** `TodoWrite` is called by agents on most multi-step work,
-so leaving it out risks a `tool-not-in-list` denial on **every one of the seven dry-run laps** —
-then `M9` adds the three tools, `G3` re-runs all seven, and we have paid for fourteen laps to learn
-what reading the SDK's tool list told us for free. The reverse error is cheap and visible: if `G2`
-shows a lap never touches `TodoWrite`, `M9` removes it in one line.
+What `M2` does instead:
 
-`fasten` stays exactly `Read, Glob, Grep` — it lists no `Bash`, writes nothing, and its report comes
-back as session text (§5.1).
+- **Pre-seed `TaskOutput` and `TaskStop` wherever `Bash` is already listed** — `ready_to_execute`,
+  `ai_qa`, `cleanup_ready` (cleanup session). Not on review laps, not on `fasten`, not on the
+  decision session. This is E8's pre-authorised case, and §19.2's argument holds for these two
+  names: without them a backgrounded `Bash` produces output nothing can read.
+- **`ToolSearch` is not seeded.** It only matters if a lap needs a deferred tool, and every tool a
+  lap lists is a core built-in. `G3` decides it, as F2 says.
+- **Tool names are checked against the session, not against memory.** `M2` adds a tier-3 probe
+  (`L8`) that reads the `tools` array of the `system/init` message at the pinned SDK and asserts
+  every name in `TOOLS_BY_STAGE` appears in it. A name the SDK does not know is the same class of
+  mistake as the one this answer corrects, and whether an unknown name in the `tools` option is
+  ignored or rejected is unverified.
 
-Each of the three gets a one-line comment in `tools.ts` naming E8 as its authority, so a later reader
-does not mistake a pre-seeded candidate for a casually added tool.
+Each seeded tool gets a one-line comment in `tools.ts` naming E8 as its authority, so a later reader
+does not mistake a pre-seeded candidate for a casually added tool. If `G3` shows a lap never uses
+one, `M9` removes it in one line.
+
+`fasten` stays exactly `Read, Glob, Grep` (§5.1).
 
 ---
 
-### Q3: Is `G1` (the live tier) really an operator row, and what happens if `L5` comes back dirty?
+### Q3: Is `G2` (the live tier) really an operator row, and what happens if `L5` comes back dirty?
 
 `npm run test:live` is a test command, not a `drive` invocation — so unlike F10's dry run it is not
 obviously outside an execute session's reach. But it starts real paid sessions. And `M8` branches on
 its result, which means the plan has to carry both branches before anyone knows which one runs.
 
 **Answer:**
-**`G1` is an operator row.** F10's reason for the dry-run gate — "the spend is the operator's" —
+**`G2` is an operator row.** F10's reason for the dry-run gate — "the spend is the operator's" —
 applies unchanged to a suite that opens real sessions; the fact that it is reached through `vitest`
 rather than through `drive` does not change who pays. The row's checklist is the seven probes of
-§16.3 by ID (`L1`–`L7`), each with a result line, and it explicitly includes the `fasten` manual
+§16.3 by ID (`L1`–`L7`) and Q2's `L8`, each with a result line, and it explicitly includes the `fasten` manual
 check (`L7`) so §18.2's verification is not left to a release checklist no test touches.
 
-**`M8` carries both branches in the plan, written before `G1` runs**, with the probe result selecting
+**`M8` carries both branches in the plan, written before `G2` runs**, with the probe result selecting
 one at execution time:
 
 | `L5` outcome | `M8` ships |
@@ -122,10 +132,10 @@ one at execution time:
 
 The third column is why the fork is cheap: `M7` already ships the detect path, the bypass audit entry
 and the warning, so the "bad" outcome is a milestone that writes documentation rather than one that
-removes code. **The guard itself ships in `M4` regardless** — no branch of `G1` can delay what
+removes code. **The guard itself ships in `M4` regardless** — no branch of `G2` can delay what
 acceptance depends on.
 
-If `G1` cannot run at all (no budget, no credentials), it is **not** ticked as "skipped": it becomes
+If `G2` cannot run at all (no budget, no credentials), it is **not** ticked as "skipped": it becomes
 the documented manual release step the objective allows ("What" bullet 4), `M8` takes the
 warning-only branch, and the fact that the abort was never probed is stated in `05_qa.md`. An
 unprobed abort is not shipped on its author's word.
@@ -141,33 +151,44 @@ of **this task** — `ai_qa`, `cleanup_ready` — plus every re-driven execute s
 run by some vibe-racer. If that is `npm run dev` from the branch, the task starts enforcing its own
 half-finished guard on itself, and a missing `TodoWrite` stalls the very session meant to add it. If
 it is the installed 0.3.0, nothing this task writes affects how this task runs — at the cost of not
-dogfooding the fix until `G2`.
+dogfooding the fix until `G3`.
 
 **Answer:**
-**Drive this task with the globally installed vibe-racer (0.3.0, unguarded) for all of `M1`–`M10`,
-and dogfood the fix only in `G2`'s scratch repository.** Record this as an explicit line in
-`03_plan.md`, because the default — `npm run dev` in the repo you are editing — is the hazardous one
-and nobody will remember which they used.
+**Drive this task from a separate worktree of `main`, built once, for every lap from `G1` to
+`done`. Dogfood the fix only in `G3`'s scratch repository.** `G1` is the first row of the table
+(Q1) so this is enforced by a pause rather than remembered.
 
-Three reasons:
+The "globally installed 0.3.0" the question offers does not exist on the machine this task runs on:
+the global `vibe-racer` is a symlink to this checkout and runs `dist/index.js`. Every milestone ends
+with `npm run build`, so the global binary **is** the branch's build from `M1` on, and a broken
+build stops `drive` for this task and for every other project on the machine. Installing the real
+0.3.0 from npm is not a way out either: it predates the Execution Status table and operator gates
+(#5, on `main`, unreleased), which this plan depends on.
+
+Three reasons to keep the driver fixed:
 
 1. **Self-stalling is a real failure mode with a bad shape.** An execute session denied a tool it
    needs cannot fix the list, because fixing it means editing `tools.ts` with a `Write` the same
    session may also be denied. That is a stall `MAX_STALLED_SESSIONS` burns three sessions on before
    anyone sees why.
-2. **`G2` exists precisely to be the dogfood run**, in a scratch repository, with a throwaway task,
+2. **`G3` exists precisely to be the dogfood run**, in a scratch repository, with a throwaway task,
    with the operator watching and the audit log read afterwards. Dogfooding mid-build duplicates it
    under worse conditions and with the task's own state at risk.
 3. **A bisect stays readable.** If a later lap of this task misbehaves, "the pipeline running it
    changed under it at `M4`" is a confound that is free to avoid.
 
-The one thing this costs: the `M5` pre-flight code path is not exercised by this task's own laps.
-Covered by tier-2 (§16.2, four triggers) and by `G2`, which runs the real thing.
+What this costs, stated:
 
-**If struck** — if the preference is to dogfood from `M4` — then `M2` must pre-seed the three tool
-families of Q2 (not merely propose them), `G2` moves to immediately after `M4`, and `03_plan.md`
-should say that a self-stall is resolved by the operator running the next lap with the global binary
-rather than by widening a list under pressure.
+- This task's own execute, QA and `done` sessions run **unguarded**, as every session has until
+  now. The guard's first real use is `G3`.
+- The `M5` pre-flight path is not exercised by this task's own laps. Covered by tier 2 (§16.2, four
+  triggers) and by `G3`.
+- While the task is in flight, any other project on this machine that runs the global `vibe-racer`
+  gets the half-built guard. Use the worktree binary there too, or do not race other projects until
+  this merges.
+
+`03_plan.md` repeats the `G1` command line next to the table, and `06_decision.md` says to remove
+the worktree (`git worktree remove ../vibe-racer-main`) after the merge.
 
 ---
 
@@ -218,9 +239,9 @@ on `main` **now**, outside the pipeline, which this branch must replace with per
 which will therefore conflict at merge.
 
 **Answer:**
-**One documentation milestone, `M10`, after `G3`** — not spread across the build, and not first.
+**One documentation milestone, `M10`, after `G4`** — not spread across the build, and not first.
 
-Why last: `M9` may change a prompt or narrow a rule, and `G3` may change it again. Docs written at
+Why last: `M9` may change a prompt or narrow a rule, and `G4` may change it again. Docs written at
 `M4` would describe the pre-dry-run rule set and need rewriting twice. Docs are the one artefact in
 this task whose content is not known until the dry run is classified, so they are the one artefact
 that belongs at the end. The three honest limits of `01_product.md` §2 and the two wrinkles of
@@ -255,4 +276,4 @@ remembered (F9).
 
 # Complete
 
-- [ ] Ready to advance to Plan Review
+- [x] Ready to advance to Plan Review
