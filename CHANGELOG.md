@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-19
+
 ### Added
 
 - **`need_operator` stage** — a pit stop outside the linear sequence, entered by the execution lap when a milestone needs the operator and always returning to `ready_to_execute`. `state.yml` records `paused_stage`, `operator_milestone` and a one-line `operator_reason`; the handler writes it, never the agent (Rule 0 unchanged). `pitwall` and `drive` list paused tasks under "waiting on operator" with the reason and the file to edit, `--retry` leaves them alone, and `radio` opens at the stage with a role description written for a pause
